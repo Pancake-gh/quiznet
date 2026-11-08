@@ -22,11 +22,11 @@ class QuizResponse(QuizBase):
   model_config = ConfigDict(from_attributes=True)
 
   id : int
-  quiz_creation_date : datetime.datetime
+  quiz_creation_date : datetime
   quiz_author : int
 
 class QuestionBase(BaseModel):
-  question_number : int = Field(min=1)
+  question_number : int
   question_content : str = Field(min_length=3, max_length=100)
 
 class QuestionCreate(QuestionBase):
@@ -53,3 +53,10 @@ class AnswerResponse(AnswerBase):
 class Token(BaseModel):
   access_token: str
   token_type: str
+
+class TokenData(BaseModel):
+    username: str | None = None
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
