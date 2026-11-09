@@ -9,20 +9,19 @@ export default function Navbar() {
       >
         <Link
           aria-label="Quiznet — strona główna"
-          className="text-xl font-bold text-green-800"
+          className="cursor-pointer text-xl font-bold text-green-800"
           href="/"
         >
           Quiznet
         </Link>
 
         <div className="flex items-center gap-3 sm:gap-5">
-          <button
-            className="cursor-not-allowed rounded-lg bg-stone-100 px-3 py-2 text-sm font-medium text-stone-400 sm:px-4"
-            disabled
-            type="button"
+          <Link
+            className="cursor-pointer rounded-lg bg-green-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-green-800 sm:px-4"
+            href="/create"
           >
             Stwórz quiz
-          </button>
+          </Link>
 
           <div
             aria-label="Profil użytkownika: Gość"
