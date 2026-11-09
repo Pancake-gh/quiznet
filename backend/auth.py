@@ -73,7 +73,7 @@ def signin(form_data: Annotated[OAuth2PasswordRequestForm, Depends()], db: Sessi
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = create_access_token(data={"sub": user.username, "role": user.role})
+    access_token = create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -86,11 +86,11 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
     new_user = User(
         username=user_in.username, 
         hashed_password=hashed_password, 
-        role='user')
+        )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    access_token = create_access_token(data={"sub": new_user.username, "role": new_user.role})
+    access_token = create_access_token(data={"sub": new_user.username})
     return {"access_token": access_token, "token_type": "bearer"}
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Session = Depends(get_db)):
