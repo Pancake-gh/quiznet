@@ -14,12 +14,14 @@ class UserResponse(UserBase):
 
 class QuizBase(BaseModel):
   quiz_name : str = Field(min_length=3, max_length=50)
+  description: str | None = Field(default=None, max_length=500)
 
 class QuizCreate(QuizBase):
   pass
 
 class QuizUpdate(BaseModel):
   quiz_name : str = Field(min_length=3, max_length=50)
+  description: str | None = Field(default=None, max_length=500)
 
 class QuizResponse(QuizBase):
   model_config = ConfigDict(from_attributes=True)

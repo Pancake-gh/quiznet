@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_active_user
 from database import get_db
-from models import Quiz, User
-from schemas import QuizCreate, QuizResponse, QuizUpdate
+from models import Question, Quiz, User
+from schemas import QuestionResponse, QuizCreate, QuizResponse, QuizUpdate
 
 router = APIRouter(prefix="/quiz", tags=["quizzes"])
 
@@ -19,6 +19,7 @@ def create_quiz(
     try:
         db_quiz = Quiz(
             quiz_name=quiz.quiz_name,
+            description=quiz.description,
             quiz_author=current_user.id,
             quiz_creation_date=datetime.utcnow(),
         )
@@ -90,6 +91,16 @@ def delete_quiz(
 def get_all_quizzes(db: Session = Depends(get_db)):
     return db.query(Quiz).all()
 
+def get_quiz_questions(quiz_id: int, db: Session = Depends(get_db)):
+    db_quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if db_quiz is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+    return (
+        db.query(Question)
+        .filter(Question.question_quiz == quiz_id)
+        .order_by(Question.question_number, Question.id)
+        .all()
+    )
 
 @router.get("/{quiz_id}", response_model=QuizResponse, status_code=status.HTTP_200_OK)
 def get_quiz_by_id(quiz_id: int, db: Session = Depends(get_db)):

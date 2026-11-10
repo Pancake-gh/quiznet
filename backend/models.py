@@ -14,6 +14,7 @@ class Quiz(Base):
   __tablename__ = "quizzes"
   id = Column(Integer, primary_key=True, index=True)
   quiz_name = Column(String(50), nullable=False)
+  description = Column(String(500), nullable=True)
   quiz_author = Column(Integer, ForeignKey('users.id'))
   quiz_creation_date = Column(DateTime)
   user = relationship('User', back_populates='quiz')

@@ -86,12 +86,6 @@ def delete_question(
             detail="Database error: Could not delete question.",
         )
 
-
-@router.get("/", response_model=list[QuestionResponse], status_code=status.HTTP_200_OK)
-def get_all_questions(db: Session = Depends(get_db)):
-    return db.query(Question).all()
-
-
 @router.get("/{question_id}", response_model=QuestionResponse, status_code=status.HTTP_200_OK)
 def get_question_by_id(question_id: int, db: Session = Depends(get_db)):
     question = db.query(Question).filter(Question.id == question_id).first()
