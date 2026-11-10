@@ -1,13 +1,18 @@
+from pathlib import Path
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, relationship, DeclarativeBase
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-engine = create_engine("sqlite:///./database.db", connect_args={"check_same_thread": False} , echo=False )
+BASE_DIR = Path(__file__).resolve().parent
+DATABASE_URL = f"sqlite:///{BASE_DIR / 'database.db'}"
+
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}, echo=False)
 Session = sessionmaker(bind=engine)
 
+
 class Base(DeclarativeBase):
-  pass
+    pass
+
 
 def get_db():
-  with Session() as db:
-    yield db
+    with Session() as db:
+        yield db

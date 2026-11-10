@@ -18,6 +18,9 @@ class QuizBase(BaseModel):
 class QuizCreate(QuizBase):
   pass
 
+class QuizUpdate(BaseModel):
+  quiz_name : str = Field(min_length=3, max_length=50)
+
 class QuizResponse(QuizBase):
   model_config = ConfigDict(from_attributes=True)
 
@@ -28,6 +31,12 @@ class QuizResponse(QuizBase):
 class QuestionBase(BaseModel):
   question_number : int
   question_content : str = Field(min_length=3, max_length=100)
+  question_quiz : int
+
+class QuestionUpdate(BaseModel):
+  question_number : int
+  question_content : str = Field(min_length=3, max_length=100)
+  question_quiz : int
 
 class QuestionCreate(QuestionBase):
   pass
@@ -42,7 +51,10 @@ class AnswerBase(BaseModel):
   is_correct : bool
 
 class AnswerCreate(AnswerBase):
-  pass
+  answer_question: int
+
+class AnswerUpdate(BaseModel):
+  is_correct: bool
 
 class AnswerResponse(AnswerBase):
   model_config = ConfigDict(from_attributes=True)
