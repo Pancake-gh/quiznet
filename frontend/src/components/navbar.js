@@ -16,27 +16,24 @@ export default function Navbar() {
         </Link>
 
         <div className="flex items-center gap-3 sm:gap-5">
+          <span
+            aria-disabled="true"
+            className="cursor-default rounded-lg px-3 py-2 text-sm font-medium text-stone-400"
+          >
+            Wyniki
+          </span>
           <Link
             className="cursor-pointer rounded-lg bg-green-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-green-800 sm:px-4"
             href="/create"
           >
             Stwórz quiz
           </Link>
-
-          <div
-            aria-label="Profil użytkownika: Gość"
-            className="flex items-center gap-2"
+          <Link
+            className="rounded-lg px-3 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-100"
+            href="/account"
           >
-            <span
-              aria-hidden="true"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 text-sm font-semibold text-green-800"
-            >
-              G
-            </span>
-            <span className="hidden text-sm font-medium text-stone-700 sm:inline">
-              Gość
-            </span>
-          </div>
+            Konto
+          </Link>
         </div>
       </nav>
     </header>
