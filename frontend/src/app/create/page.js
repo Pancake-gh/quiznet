@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { saveQuiz } from "../../lib/local-data";
 
 function createQuestion(id) {
   return {
@@ -12,12 +14,12 @@ function createQuestion(id) {
 }
 
 export default function CreateQuizPage() {
+  const router = useRouter();
   const nextQuestionId = useRef(2);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [questions, setQuestions] = useState([createQuestion(1)]);
   const [formError, setFormError] = useState("");
-  const [formSubmitted, setFormSubmitted] = useState(false);
 
   function updateQuestion(questionId, changes) {
     setQuestions((current) =>
@@ -27,7 +29,6 @@ export default function CreateQuizPage() {
           : question,
       ),
     );
-    setFormSubmitted(false);
   }
 
   function updateAnswer(questionId, answerIndex, value) {
@@ -43,33 +44,29 @@ export default function CreateQuizPage() {
           : question,
       ),
     );
-    setFormSubmitted(false);
   }
 
   function addQuestion() {
     const newQuestion = createQuestion(nextQuestionId.current);
     nextQuestionId.current += 1;
     setQuestions((current) => [...current, newQuestion]);
-    setFormSubmitted(false);
   }
 
   function removeQuestion(questionId) {
     setQuestions((current) =>
       current.filter((question) => question.id !== questionId),
     );
-    setFormSubmitted(false);
   }
 
   function handleSubmit(event) {
     event.preventDefault();
-    // trim() odrzuca pytania i odpowiedzi zawierające tylko spacje.
     const hasInvalidQuestion = questions.some(
       (question) =>
         question.text.trim().length < 3 ||
         question.answers.some((answer) => !answer.trim()),
     );
 
-    if (!title.trim() || hasInvalidQuestion) {
+    if (title.trim().length < 3 || hasInvalidQuestion) {
       setFormError(
         "Uzupełnij tytuł, treść każdego pytania i wszystkie cztery odpowiedzi.",
       );
@@ -77,7 +74,24 @@ export default function CreateQuizPage() {
     }
 
     setFormError("");
-    setFormSubmitted(true);
+    try {
+      const createdQuiz = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        title: title.trim(),
+        description: description.trim(),
+        questions: questions.map((question) => ({
+          text: question.text.trim(),
+          answers: question.answers.map((answer) => answer.trim()),
+          correctAnswer: question.correctAnswer,
+        })),
+      };
+      saveQuiz(createdQuiz);
+      router.push(`/play/${createdQuiz.id}`);
+    } catch (requestError) {
+      setFormError(
+        `Nie udało się zapisać quizu w tej przeglądarce. ${requestError.message}`,
+      );
+    }
   }
 
   return (
@@ -118,7 +132,6 @@ export default function CreateQuizPage() {
                   minLength={3}
                   onChange={(event) => {
                     setTitle(event.target.value);
-                    setFormSubmitted(false);
                   }}
                   placeholder="Dodaj tytuł quizu"
                   required
@@ -133,7 +146,6 @@ export default function CreateQuizPage() {
                   maxLength={200}
                   onChange={(event) => {
                     setDescription(event.target.value);
-                    setFormSubmitted(false);
                   }}
                   placeholder="Opisz czego dotyczy quiz"
                   rows={3}
@@ -278,11 +290,6 @@ export default function CreateQuizPage() {
             >
               Utwórz quiz
             </button>
-            {formSubmitted && (
-              <p className="mt-4 text-sm font-medium text-green-800" role="status">
-                Utworzono quiz
-              </p>
-            )}
           </div>
         </form>
       </div>
