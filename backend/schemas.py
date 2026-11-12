@@ -64,6 +64,52 @@ class AnswerResponse(AnswerBase):
   id : int
   answer_question : int
 
+class AnswerOptionResponse(BaseModel):
+  model_config = ConfigDict(from_attributes=True)
+
+  id: int
+  answer_question: int
+
+class QuizPlayAnswerResponse(BaseModel):
+  id: int
+
+class QuizPlayQuestionResponse(BaseModel):
+  id: int
+  question_number: int
+  question_content: str
+  answers: list[QuizPlayAnswerResponse]
+
+class QuizPlayResponse(BaseModel):
+  id: int
+  quiz_name: str
+  description: str | None
+  questions: list[QuizPlayQuestionResponse]
+
+class QuizAttemptResponse(BaseModel):
+  id: int
+  quiz_id: int
+  total_questions: int
+
+class QuizAnswerSubmission(BaseModel):
+  question_id: int = Field(gt=0)
+  answer_id: int = Field(gt=0)
+
+class ResultResponse(BaseModel):
+  model_config = ConfigDict(from_attributes=True)
+
+  id: int
+  user_id: int
+  quiz_id: int
+  score: int
+  total_questions: int
+  completed_at: datetime
+
+class QuizAnswerProgressResponse(BaseModel):
+  answered_questions: int
+  total_questions: int
+  completed: bool
+  result: ResultResponse | None = None
+
 class Token(BaseModel):
   access_token: str
   token_type: str

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from auth import get_current_active_user
 from database import get_db
 from models import Answer, Question, User
-from schemas import AnswerCreate, AnswerResponse, AnswerUpdate
+from schemas import AnswerCreate, AnswerOptionResponse, AnswerResponse, AnswerUpdate
 
 router = APIRouter(prefix="/answer", tags=["answers"])
 
@@ -85,12 +85,12 @@ def delete_answer(
         )
 
 
-@router.get("/", response_model=list[AnswerResponse], status_code=status.HTTP_200_OK)
+@router.get("/", response_model=list[AnswerOptionResponse], status_code=status.HTTP_200_OK)
 def get_all_answers(db: Session = Depends(get_db)):
     return db.query(Answer).all()
 
 
-@router.get("/{answer_id}", response_model=AnswerResponse, status_code=status.HTTP_200_OK)
+@router.get("/{answer_id}", response_model=AnswerOptionResponse, status_code=status.HTTP_200_OK)
 def get_answer_by_id(answer_id: int, db: Session = Depends(get_db)):
     answer = db.query(Answer).filter(Answer.id == answer_id).first()
     if not answer:
@@ -98,7 +98,7 @@ def get_answer_by_id(answer_id: int, db: Session = Depends(get_db)):
     return answer
 
 
-@router.get("/question/{question_id}", response_model=list[AnswerResponse], status_code=status.HTTP_200_OK)
+@router.get("/question/{question_id}", response_model=list[AnswerOptionResponse], status_code=status.HTTP_200_OK)
 def get_answers_for_question(question_id: int, db: Session = Depends(get_db)):
     question = db.query(Question).filter(Question.id == question_id).first()
     if question is None:
