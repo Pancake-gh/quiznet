@@ -20,6 +20,11 @@ def create_answer(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found.")
     if question.quiz is None or current_user.id != question.quiz.quiz_author:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only add answers to questions in your own quizzes.")
+    existing_answers = db.query(Answer).filter(Answer.answer_question == question.id)
+    if existing_answers.count() >= 4:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A question can have exactly four answers.")
+    if answer.is_correct and existing_answers.filter(Answer.is_correct.is_(True)).first() is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A question can have only one correct answer.")
 
     try:
         db_answer = Answer(**answer.model_dump())
@@ -48,8 +53,26 @@ def update_answer(
     if db_answer.question is None or db_answer.question.quiz is None or current_user.id != db_answer.question.quiz.quiz_author:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only update answers in your own quizzes.")
 
+    if answer_data.is_correct and not db_answer.is_correct:
+        another_correct_answer = (
+            db.query(Answer)
+            .filter(
+                Answer.answer_question == db_answer.answer_question,
+                Answer.id != db_answer.id,
+                Answer.is_correct.is_(True),
+            )
+            .first()
+        )
+        if another_correct_answer is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A question can have only one correct answer.",
+            )
+
     try:
         db_answer.is_correct = answer_data.is_correct
+        if answer_data.answer_content is not None:
+            db_answer.answer_content = answer_data.answer_content
         db.commit()
         db.refresh(db_answer)
         return db_answer

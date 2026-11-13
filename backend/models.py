@@ -36,6 +36,7 @@ class Question(Base):
 class Answer(Base):
   __tablename__ = "answers"
   id = Column(Integer, primary_key=True, index=True)
+  answer_content = Column(String(120), nullable=False)
   is_correct = Column(Boolean, nullable=False)
   answer_question = Column(Integer, ForeignKey('questions.id'))
   question = relationship('Question', back_populates='answer')
@@ -43,7 +44,8 @@ class Answer(Base):
 class Result(Base):
   __tablename__ = "results"
   id = Column(Integer, primary_key=True, index=True)
-  user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+  user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+  player_name = Column(String(30), nullable=False)
   quiz_id = Column(Integer, ForeignKey('quizzes.id'), nullable=False)
   score = Column(Integer, nullable=False)
   total_questions = Column(Integer, nullable=False)
@@ -54,7 +56,9 @@ class Result(Base):
 class QuizAttempt(Base):
   __tablename__ = "quiz_attempts"
   id = Column(Integer, primary_key=True, index=True)
-  user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+  user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+  player_name = Column(String(30), nullable=False)
+  attempt_token_hash = Column(String(64), nullable=False)
   quiz_id = Column(Integer, ForeignKey('quizzes.id'), nullable=False)
   started_at = Column(DateTime, nullable=False)
   completed_at = Column(DateTime, nullable=True)

@@ -1,5 +1,5 @@
-from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class UserBase(BaseModel):
   username : str = Field(min_length=3, max_length=20)
@@ -50,12 +50,14 @@ class QuestionResponse(QuestionBase):
   question_quiz : int
 
 class AnswerBase(BaseModel):
+  answer_content: str = Field(min_length=1, max_length=120)
   is_correct : bool
 
 class AnswerCreate(AnswerBase):
   answer_question: int
 
 class AnswerUpdate(BaseModel):
+  answer_content: str | None = Field(default=None, min_length=1, max_length=120)
   is_correct: bool
 
 class AnswerResponse(AnswerBase):
@@ -69,9 +71,11 @@ class AnswerOptionResponse(BaseModel):
 
   id: int
   answer_question: int
+  answer_content: str
 
 class QuizPlayAnswerResponse(BaseModel):
   id: int
+  answer_content: str
 
 class QuizPlayQuestionResponse(BaseModel):
   id: int
@@ -89,17 +93,39 @@ class QuizAttemptResponse(BaseModel):
   id: int
   quiz_id: int
   total_questions: int
+  player_name: str
+  attempt_token: str
+
+class QuizAttemptCreate(BaseModel):
+  player_name: str = Field(min_length=2, max_length=30)
+
+  @field_validator("player_name")
+  @classmethod
+  def normalize_player_name(cls, value: str) -> str:
+    value = value.strip()
+    if len(value) < 2:
+      raise ValueError("Player name must contain at least two non-space characters.")
+    return value
 
 class QuizAnswerSubmission(BaseModel):
   question_id: int = Field(gt=0)
   answer_id: int = Field(gt=0)
+  attempt_token: str = Field(min_length=32, max_length=128)
 
 class ResultResponse(BaseModel):
   model_config = ConfigDict(from_attributes=True)
 
   id: int
-  user_id: int
+  user_id: int | None
+  player_name: str
   quiz_id: int
+  score: int
+  total_questions: int
+  completed_at: datetime
+
+class LeaderboardEntryResponse(BaseModel):
+  id: int
+  player_name: str
   score: int
   total_questions: int
   completed_at: datetime

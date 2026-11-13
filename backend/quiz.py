@@ -1,5 +1,8 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+import hashlib
+import hmac
+import secrets
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from auth import get_current_active_user
@@ -9,7 +12,9 @@ from schemas import (
     QuizCreate,
     QuizAnswerProgressResponse,
     QuizAnswerSubmission,
+    QuizAttemptCreate,
     QuizAttemptResponse,
+    LeaderboardEntryResponse,
     QuizPlayAnswerResponse,
     QuizPlayQuestionResponse,
     QuizPlayResponse,
@@ -128,10 +133,18 @@ def get_quiz_for_play(quiz_id: int, db: Session = Depends(get_db)):
         question_id: [] for question_id in question_ids
     }
     if question_ids:
-        answers = db.query(Answer).filter(Answer.answer_question.in_(question_ids)).all()
+        answers = (
+            db.query(Answer)
+            .filter(Answer.answer_question.in_(question_ids))
+            .order_by(Answer.id)
+            .all()
+        )
         for answer in answers:
             answers_by_question[answer.answer_question].append(
-                QuizPlayAnswerResponse(id=answer.id)
+                QuizPlayAnswerResponse(
+                    id=answer.id,
+                    answer_content=answer.answer_content,
+                )
             )
 
     return QuizPlayResponse(
@@ -157,8 +170,8 @@ def get_quiz_for_play(quiz_id: int, db: Session = Depends(get_db)):
 )
 def start_quiz_attempt(
     quiz_id: int,
+    attempt_data: QuizAttemptCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
     if quiz is None:
@@ -170,23 +183,35 @@ def start_quiz_attempt(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This quiz has no questions to solve.",
         )
-    question_without_answers = (
-        db.query(Question.id)
-        .outerjoin(Answer, Answer.answer_question == Question.id)
-        .filter(
-            Question.question_quiz == quiz_id,
-            Answer.id.is_(None),
-        )
-        .first()
+    question_ids = [
+        question_id
+        for (question_id,) in db.query(Question.id)
+        .filter(Question.question_quiz == quiz_id)
+        .all()
+    ]
+    answer_rows = (
+        db.query(Answer.answer_question, Answer.is_correct)
+        .filter(Answer.answer_question.in_(question_ids))
+        .all()
     )
-    if question_without_answers is not None:
+    answer_counts: dict[int, tuple[int, int]] = {}
+    for question_id, is_correct in answer_rows:
+        answer_count, correct_count = answer_counts.get(question_id, (0, 0))
+        answer_counts[question_id] = (
+            answer_count + 1,
+            correct_count + int(is_correct),
+        )
+    if any(answer_counts.get(question_id, (0, 0)) != (4, 1) for question_id in question_ids):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Every question in this quiz must have at least one answer.",
+            detail="Every question must have exactly four answers and exactly one correct answer.",
         )
 
+    attempt_token = secrets.token_urlsafe(32)
     attempt = QuizAttempt(
-        user_id=current_user.id,
+        user_id=None,
+        player_name=attempt_data.player_name,
+        attempt_token_hash=hashlib.sha256(attempt_token.encode()).hexdigest(),
         quiz_id=quiz_id,
         started_at=datetime.utcnow(),
     )
@@ -197,6 +222,8 @@ def start_quiz_attempt(
         id=attempt.id,
         quiz_id=quiz_id,
         total_questions=total_questions,
+        player_name=attempt.player_name,
+        attempt_token=attempt_token,
     )
 
 
@@ -210,18 +237,17 @@ def submit_quiz_answer(
     attempt_id: int,
     submission: QuizAnswerSubmission,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
     attempt = (
         db.query(QuizAttempt)
         .filter(
             QuizAttempt.id == attempt_id,
             QuizAttempt.quiz_id == quiz_id,
-            QuizAttempt.user_id == current_user.id,
         )
         .first()
     )
-    if attempt is None:
+    submitted_token_hash = hashlib.sha256(submission.attempt_token.encode()).hexdigest()
+    if attempt is None or not hmac.compare_digest(attempt.attempt_token_hash, submitted_token_hash):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz attempt not found")
     if attempt.completed_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Quiz attempt is already complete")
@@ -295,7 +321,8 @@ def submit_quiz_answer(
             .count()
         )
         result = Result(
-            user_id=current_user.id,
+            user_id=attempt.user_id,
+            player_name=attempt.player_name,
             quiz_id=quiz_id,
             score=score,
             total_questions=total_questions,
@@ -313,3 +340,25 @@ def submit_quiz_answer(
         completed=result is not None,
         result=result,
     )
+
+
+@router.get(
+    "/{quiz_id}/leaderboard",
+    response_model=list[LeaderboardEntryResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_quiz_leaderboard(
+    quiz_id: int,
+    limit: int = Query(default=10, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    if db.query(Quiz.id).filter(Quiz.id == quiz_id).first() is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
+    results = (
+        db.query(Result)
+        .filter(Result.quiz_id == quiz_id)
+        .order_by(Result.score.desc(), Result.completed_at.asc(), Result.id.asc())
+        .limit(limit)
+        .all()
+    )
+    return results
