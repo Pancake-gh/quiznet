@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveQuiz } from "../../lib/local-data";
+import { apiRequest } from "../../lib/api";
 
 function createQuestion(id) {
   return {
@@ -18,8 +18,10 @@ export default function CreateQuizPage() {
   const nextQuestionId = useRef(2);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [timeLimit, setTimeLimit] = useState("");
   const [questions, setQuestions] = useState([createQuestion(1)]);
   const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   function updateQuestion(questionId, changes) {
     setQuestions((current) =>
@@ -58,8 +60,11 @@ export default function CreateQuizPage() {
     );
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
+    if (saving) {
+      return;
+    }
     const hasInvalidQuestion = questions.some(
       (question) =>
         question.text.trim().length < 3 ||
@@ -74,23 +79,30 @@ export default function CreateQuizPage() {
     }
 
     setFormError("");
+    setSaving(true);
     try {
-      const createdQuiz = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        title: title.trim(),
-        description: description.trim(),
-        questions: questions.map((question) => ({
-          text: question.text.trim(),
-          answers: question.answers.map((answer) => answer.trim()),
-          correctAnswer: question.correctAnswer,
-        })),
-      };
-      saveQuiz(createdQuiz);
+      const createdQuiz = await apiRequest("/quiz/create", {
+        method: "POST",
+        body: {
+          quiz_name: title.trim(),
+          description: description.trim() || null,
+          time_limit_seconds: timeLimit === "" ? null : Number(timeLimit),
+          questions: questions.map((question) => ({
+            question_content: question.text.trim(),
+            answers: question.answers.map((answer, answerIndex) => ({
+              answer_content: answer.trim(),
+              is_correct: answerIndex === question.correctAnswer,
+            })),
+          })),
+        },
+      });
       router.push(`/play/${createdQuiz.id}`);
     } catch (requestError) {
       setFormError(
-        `Nie udało się zapisać quizu w tej przeglądarce. ${requestError.message}`,
+        `Nie udało się zapisać quizu na serwerze. ${requestError.message}`,
       );
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -151,6 +163,23 @@ export default function CreateQuizPage() {
                   rows={3}
                   value={description}
                 />
+              </label>
+
+              <label className="block text-sm font-semibold text-stone-700">
+                Limit czasu na pytanie{" "}
+                <span className="font-normal text-stone-500">(opcjonalnie, w sekundach)</span>
+                <input
+                  className="mt-2 w-full rounded-xl border border-stone-300 px-4 py-3 font-normal outline-none transition focus:border-green-600 focus:ring-4 focus:ring-green-100"
+                  min={1}
+                  onChange={(event) => setTimeLimit(event.target.value)}
+                  placeholder="Bez limitu"
+                  step={1}
+                  type="number"
+                  value={timeLimit}
+                />
+                <span className="mt-1 block font-normal text-stone-500">
+                  Ten sam limit będzie obowiązywał przy każdym pytaniu.
+                </span>
               </label>
             </div>
           </section>
@@ -285,10 +314,11 @@ export default function CreateQuizPage() {
               </p>
             )}
             <button
-              className="w-full cursor-pointer rounded-xl bg-green-700 px-6 py-3.5 font-bold text-white transition hover:bg-green-800 focus:outline-none focus:ring-4 focus:ring-green-200 sm:w-auto"
+              className="w-full cursor-pointer rounded-xl bg-green-700 px-6 py-3.5 font-bold text-white transition hover:bg-green-800 focus:outline-none focus:ring-4 focus:ring-green-200 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+              disabled={saving}
               type="submit"
             >
-              Utwórz quiz
+              {saving ? "Zapisywanie…" : "Utwórz quiz"}
             </button>
           </div>
         </form>

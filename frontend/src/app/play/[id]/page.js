@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
-import { getQuiz, saveResult } from "../../../lib/local-data";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { apiRequest } from "../../../lib/api";
 
 function PlayQuizContent() {
   const { id } = useParams();
@@ -11,65 +11,131 @@ function PlayQuizContent() {
   const [playerName, setPlayerName] = useState("");
   const [questionIndex, setQuestionIndex] = useState(-1);
   const [selectedAnswer, setSelectedAnswer] = useState("");
-  const [score, setScore] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState(null);
+  const [timerQuestionIndex, setTimerQuestionIndex] = useState(-1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [attempt, setAttempt] = useState(null);
   const [error, setError] = useState("");
+  const submissionInProgress = useRef(false);
+  const submitAnswerRef = useRef(null);
 
   useEffect(() => {
-    try {
-      setQuiz(getQuiz(id));
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+    let active = true;
+    apiRequest(`/quiz/${id}/play`)
+      .then((savedQuiz) => {
+        if (active) {
+          setQuiz(savedQuiz);
+        }
+      })
+      .catch((requestError) => {
+        if (active) {
+          setError(requestError.message);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, [id]);
 
-  function startQuiz(event) {
+  async function startQuiz(event) {
     event.preventDefault();
     if (playerName.trim().length < 2) {
       setError("Wpisz nazwę gracza (co najmniej 2 znaki).");
       return;
     }
-    setError("");
-    setQuestionIndex(0);
+    try {
+      const newAttempt = await apiRequest(`/quiz/${id}/attempts`, {
+        method: "POST",
+        body: { player_name: playerName.trim() },
+      });
+      setAttempt(newAttempt);
+      setError("");
+      setQuestionIndex(0);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   }
 
-  function submitAnswer(event) {
-    event.preventDefault();
-    if (selectedAnswer === "") {
+  useEffect(() => {
+    const timeLimit = quiz?.time_limit_seconds;
+    if (!timeLimit || questionIndex < 0 || result) {
+      setTimerQuestionIndex(questionIndex);
+      setTimeRemaining(null);
+      return;
+    }
+
+    const deadline = Date.now() + timeLimit * 1000;
+    setTimerQuestionIndex(questionIndex);
+    setTimeRemaining(timeLimit);
+    const intervalId = window.setInterval(() => {
+      setTimeRemaining(
+        Math.max(0, Math.ceil((deadline - Date.now()) / 1000)),
+      );
+    }, 250);
+    return () => window.clearInterval(intervalId);
+  }, [quiz?.time_limit_seconds, questionIndex, result]);
+
+  async function submitSelectedAnswer(timedOut = false) {
+    if (submissionInProgress.current) {
+      return;
+    }
+    if (!timedOut && selectedAnswer === "") {
       setError("Wybierz jedną odpowiedź.");
       return;
     }
 
     const currentQuestion = quiz.questions[questionIndex];
-    const nextScore =
-      score + (Number(selectedAnswer) === currentQuestion.correctAnswer ? 1 : 0);
-
-    setError("");
-    setSelectedAnswer("");
-
-    if (questionIndex === quiz.questions.length - 1) {
-      const completedResult = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        username: playerName.trim(),
-        quiz_name: quiz.title,
-        score: nextScore,
-        total_questions: quiz.questions.length,
-        completed_at: new Date().toISOString(),
-      };
-      try {
-        saveResult(completedResult);
-        setScore(nextScore);
-        setResult(completedResult);
-      } catch (requestError) {
-        setError(`Nie udało się zapisać wyniku. ${requestError.message}`);
+    submissionInProgress.current = true;
+    setIsSubmitting(true);
+    try {
+      const progress = await apiRequest(`/quiz/${id}/attempts/${attempt.id}/answers`, {
+        method: "POST",
+        body: {
+          question_id: currentQuestion.id,
+          answer_id: timedOut ? null : Number(selectedAnswer),
+          attempt_token: attempt.attempt_token,
+          timed_out: timedOut,
+        },
+      });
+      setError("");
+      setSelectedAnswer("");
+      if (progress.completed) {
+        setResult(progress.result);
+        return;
       }
-      return;
+      setQuestionIndex((current) => current + 1);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      submissionInProgress.current = false;
+      setIsSubmitting(false);
     }
-
-    setScore(nextScore);
-    setQuestionIndex((current) => current + 1);
   }
 
+  submitAnswerRef.current = submitSelectedAnswer;
+
+  useEffect(() => {
+    if (
+      timerQuestionIndex === questionIndex &&
+      timeRemaining === 0 &&
+      questionIndex >= 0 &&
+      !result
+    ) {
+      void submitAnswerRef.current?.(true);
+    }
+  }, [timeRemaining, timerQuestionIndex, questionIndex, result]);
+
+  function submitAnswer(event) {
+    event.preventDefault();
+    void submitSelectedAnswer(questionTimeRemaining === 0);
+  }
+
+  const questionTimeRemaining =
+    timerQuestionIndex === questionIndex ? timeRemaining : null;
+  const timerIsStarting =
+    quiz?.time_limit_seconds && timerQuestionIndex !== questionIndex;
   const question = quiz?.questions[questionIndex];
 
   return (
@@ -83,12 +149,12 @@ function PlayQuizContent() {
         {result && (
           <div className="rounded-3xl border border-green-100 bg-white p-6 text-center shadow-sm sm:p-10">
             <p className="text-sm font-semibold text-green-700">Quiz ukończony</p>
-            <h1 className="mt-2 text-3xl font-bold">{quiz.title}</h1>
+            <h1 className="mt-2 text-3xl font-bold">{quiz.quiz_name}</h1>
             <p className="mt-6 text-5xl font-extrabold text-green-800">
               {result.score}
               <span className="text-2xl text-stone-500">/{result.total_questions}</span>
             </p>
-            <p className="mt-3 text-stone-600">Gracz: {result.username}</p>
+            <p className="mt-3 text-stone-600">Gracz: {result.player_name}</p>
             <p className="mt-1 text-sm text-stone-500">
               Zapisano wynik.
             </p>
@@ -106,11 +172,16 @@ function PlayQuizContent() {
             onSubmit={startQuiz}
           >
             <p className="text-sm font-semibold text-green-700">Quiz</p>
-            <h1 className="mt-2 text-3xl font-bold">{quiz.title}</h1>
+            <h1 className="mt-2 text-3xl font-bold">{quiz.quiz_name}</h1>
             {quiz.description && <p className="mt-3 text-stone-600">{quiz.description}</p>}
             <p className="mt-5 text-sm text-stone-500">
               {quiz.questions.length} {quiz.questions.length === 1 ? "pytanie" : "pytań"}
             </p>
+            {quiz.time_limit_seconds && (
+              <p className="mt-2 text-sm text-stone-500">
+                Limit czasu: {quiz.time_limit_seconds} s na każde pytanie
+              </p>
+            )}
             <label className="mt-6 block text-sm font-semibold text-stone-700">
               Nazwa gracza
               <input
@@ -135,7 +206,7 @@ function PlayQuizContent() {
           <div className="rounded-3xl border border-stone-200 bg-white p-8 text-center shadow-sm">
             <h1 className="text-2xl font-bold">Nie znaleziono quizu</h1>
             <p className="mt-2 text-stone-600">
-              Quiz może być zapisany w innej przeglądarce.
+              Nie znaleziono quizu na serwerze.
             </p>
             <Link className="mt-5 inline-block font-semibold text-green-800 underline" href="/">
               Wróć do listy quizów
@@ -148,41 +219,59 @@ function PlayQuizContent() {
             onSubmit={submitAnswer}
           >
             <div className="flex items-center justify-between gap-3 text-sm text-stone-500">
-              <span>{quiz.title}</span>
+              <span>{quiz.quiz_name}</span>
               <span>{questionIndex + 1} / {quiz.questions.length}</span>
             </div>
-            <h1 className="mt-5 text-2xl font-bold">{question.text}</h1>
+            {questionTimeRemaining !== null && (
+              <p
+                aria-live="polite"
+                className={`mt-3 text-sm font-semibold ${
+                  questionTimeRemaining <= 5 ? "text-red-700" : "text-stone-600"
+                }`}
+              >
+                Pozostało {questionTimeRemaining} s
+              </p>
+            )}
+            <h1 className="mt-5 text-2xl font-bold">{question.question_content}</h1>
             <fieldset className="mt-6 space-y-3">
               <legend className="sr-only">Wybierz odpowiedź</legend>
               {question.answers.map((answer, index) => (
                 <label
                   className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition ${
-                    selectedAnswer === String(index)
+                    selectedAnswer === String(answer.id)
                       ? "border-green-500 bg-green-50 ring-2 ring-green-100"
                       : "border-stone-200 hover:border-green-300"
                   }`}
                   key={`${questionIndex}-${index}`}
                 >
                   <input
-                    checked={selectedAnswer === String(index)}
+                    checked={selectedAnswer === String(answer.id)}
                     className="h-4 w-4 accent-green-700"
+                    disabled={isSubmitting || timerIsStarting || questionTimeRemaining === 0}
                     name={`question-${questionIndex}`}
-                    onChange={() => setSelectedAnswer(String(index))}
+                    onChange={() => setSelectedAnswer(String(answer.id))}
                     type="radio"
-                    value={index}
+                    value={answer.id}
                   />
                   <span className="w-5 text-xs font-bold text-stone-500">
                     {String.fromCharCode(65 + index)}
                   </span>
-                  <span>{answer}</span>
+                  <span>{answer.answer_content}</span>
                 </label>
               ))}
             </fieldset>
             <button
-              className="mt-6 w-full rounded-xl bg-green-700 px-5 py-3 font-bold text-white hover:bg-green-800 sm:w-auto"
+              className="mt-6 w-full rounded-xl bg-green-700 px-5 py-3 font-bold text-white hover:bg-green-800 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+              disabled={isSubmitting || timerIsStarting}
               type="submit"
             >
-              {questionIndex === quiz.questions.length - 1 ? "Zakończ quiz" : "Następne pytanie"}
+              {isSubmitting
+                ? "Zapisywanie…"
+                : questionTimeRemaining === 0
+                  ? "Czas minął — przejdź dalej"
+                  : questionIndex === quiz.questions.length - 1
+                    ? "Zakończ quiz"
+                    : "Następne pytanie"}
             </button>
           </form>
         )}

@@ -3,6 +3,8 @@ import hashlib
 import hmac
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from auth import get_current_active_user
@@ -10,6 +12,7 @@ from database import get_db
 from models import Answer, Question, Quiz, QuizAttempt, QuizAttemptAnswer, Result, User
 from schemas import (
     QuizCreate,
+    QuizListResponse,
     QuizAnswerProgressResponse,
     QuizAnswerSubmission,
     QuizAttemptCreate,
@@ -30,24 +33,40 @@ router = APIRouter(prefix="/quiz", tags=["quizzes"])
 def create_quiz(
     quiz: QuizCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
 ):
+    db_quiz = Quiz(
+        quiz_name=quiz.quiz_name,
+        description=quiz.description,
+        time_limit_seconds=quiz.time_limit_seconds,
+        quiz_creation_date=datetime.utcnow(),
+    )
     try:
-        db_quiz = Quiz(
-            quiz_name=quiz.quiz_name,
-            description=quiz.description,
-            quiz_author=current_user.id,
-            quiz_creation_date=datetime.utcnow(),
-        )
         db.add(db_quiz)
+        db.flush()
+        for question_number, question_data in enumerate(quiz.questions, start=1):
+            db_question = Question(
+                question_number=question_number,
+                question_content=question_data.question_content,
+                question_quiz=db_quiz.id,
+            )
+            db.add(db_question)
+            db.flush()
+            db.add_all(
+                Answer(
+                    answer_content=answer_data.answer_content,
+                    is_correct=answer_data.is_correct,
+                    answer_question=db_question.id,
+                )
+                for answer_data in question_data.answers
+            )
         db.commit()
         db.refresh(db_quiz)
         return db_quiz
-    except Exception:
+    except SQLAlchemyError:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Database error: Could not create quiz due to data or constraint violation.",
+            detail="Could not save quiz and questions.",
         )
 
 
@@ -103,9 +122,27 @@ def delete_quiz(
         )
 
 
-@router.get("/", response_model=list[QuizResponse], status_code=status.HTTP_200_OK)
+@router.get("/", response_model=list[QuizListResponse], status_code=status.HTTP_200_OK)
+@router.get("", response_model=list[QuizListResponse], status_code=status.HTTP_200_OK, include_in_schema=False)
 def get_all_quizzes(db: Session = Depends(get_db)):
-    return db.query(Quiz).all()
+    rows = (
+        db.query(Quiz, func.count(Question.id).label("question_count"))
+        .outerjoin(Question, Question.question_quiz == Quiz.id)
+        .group_by(Quiz.id)
+        .order_by(Quiz.quiz_creation_date.desc(), Quiz.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": quiz.id,
+            "quiz_name": quiz.quiz_name,
+            "description": quiz.description,
+            "quiz_creation_date": quiz.quiz_creation_date,
+            "quiz_author": quiz.quiz_author,
+            "question_count": question_count,
+        }
+        for quiz, question_count in rows
+    ]
 
 
 @router.get("/{quiz_id}", response_model=QuizResponse, status_code=status.HTTP_200_OK)
@@ -151,6 +188,7 @@ def get_quiz_for_play(quiz_id: int, db: Session = Depends(get_db)):
         id=quiz.id,
         quiz_name=quiz.quiz_name,
         description=quiz.description,
+        time_limit_seconds=quiz.time_limit_seconds,
         questions=[
             QuizPlayQuestionResponse(
                 id=question.id,
@@ -208,12 +246,14 @@ def start_quiz_attempt(
         )
 
     attempt_token = secrets.token_urlsafe(32)
+    attempt_started_at = datetime.utcnow()
     attempt = QuizAttempt(
         user_id=None,
         player_name=attempt_data.player_name,
         attempt_token_hash=hashlib.sha256(attempt_token.encode()).hexdigest(),
         quiz_id=quiz_id,
-        started_at=datetime.utcnow(),
+        started_at=attempt_started_at,
+        question_started_at=attempt_started_at,
     )
     db.add(attempt)
     db.commit()
@@ -252,6 +292,25 @@ def submit_quiz_answer(
     if attempt.completed_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Quiz attempt is already complete")
 
+    total_questions = db.query(Question).filter(Question.question_quiz == quiz_id).count()
+    answered_questions_before_submission = (
+        db.query(QuizAttemptAnswer)
+        .filter(QuizAttemptAnswer.attempt_id == attempt.id)
+        .count()
+    )
+    expected_question = (
+        db.query(Question)
+        .filter(Question.question_quiz == quiz_id)
+        .order_by(Question.question_number, Question.id)
+        .offset(answered_questions_before_submission)
+        .first()
+    )
+    if expected_question is None or expected_question.id != submission.question_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Answer questions in order.",
+        )
+
     question = (
         db.query(Question)
         .filter(
@@ -264,20 +323,6 @@ def submit_quiz_answer(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Question does not belong to this quiz.",
-        )
-
-    answer = (
-        db.query(Answer)
-        .filter(
-            Answer.id == submission.answer_id,
-            Answer.answer_question == question.id,
-        )
-        .first()
-    )
-    if answer is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Answer does not belong to this question.",
         )
 
     existing_answer = (
@@ -294,17 +339,56 @@ def submit_quiz_answer(
             detail="An answer has already been submitted for this question.",
         )
 
+    current_time = datetime.utcnow()
+    time_limit_seconds = attempt.quiz.time_limit_seconds
+    question_started_at = attempt.question_started_at or attempt.started_at
+    timed_out = submission.timed_out or (
+        time_limit_seconds is not None
+        and (current_time - question_started_at).total_seconds() >= time_limit_seconds
+    )
+
+    if timed_out:
+        answer = (
+            db.query(Answer)
+            .filter(
+                Answer.answer_question == question.id,
+                Answer.is_correct.is_(False),
+            )
+            .order_by(Answer.id)
+            .first()
+        )
+        if answer is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Timed-out questions must have an incorrect answer option.",
+            )
+        is_correct = False
+    else:
+        answer = (
+            db.query(Answer)
+            .filter(
+                Answer.id == submission.answer_id,
+                Answer.answer_question == question.id,
+            )
+            .first()
+        )
+        if answer is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Answer does not belong to this question.",
+            )
+        is_correct = answer.is_correct
+
     db.add(
         QuizAttemptAnswer(
             attempt_id=attempt.id,
             question_id=question.id,
             answer_id=answer.id,
-            is_correct=answer.is_correct,
+            is_correct=is_correct,
         )
     )
     db.flush()
 
-    total_questions = db.query(Question).filter(Question.question_quiz == quiz_id).count()
     answered_questions = (
         db.query(QuizAttemptAnswer)
         .filter(QuizAttemptAnswer.attempt_id == attempt.id)
@@ -330,6 +414,8 @@ def submit_quiz_answer(
         )
         attempt.completed_at = result.completed_at
         db.add(result)
+    else:
+        attempt.question_started_at = current_time
 
     db.commit()
     if result is not None:

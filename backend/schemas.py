@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 class UserBase(BaseModel):
   username : str = Field(min_length=3, max_length=20)
@@ -15,20 +15,39 @@ class UserResponse(UserBase):
 class QuizBase(BaseModel):
   quiz_name : str = Field(min_length=3, max_length=50)
   description: str | None = Field(default=None, max_length=500)
-
-class QuizCreate(QuizBase):
-  pass
+  time_limit_seconds: int | None = Field(default=None, ge=1)
 
 class QuizUpdate(BaseModel):
   quiz_name : str = Field(min_length=3, max_length=50)
   description: str | None = Field(default=None, max_length=500)
+  time_limit_seconds: int | None = Field(default=None, ge=1)
 
 class QuizResponse(QuizBase):
   model_config = ConfigDict(from_attributes=True)
 
   id : int
-  quiz_creation_date : datetime
-  quiz_author : int
+  quiz_creation_date : datetime | None
+  quiz_author : int | None
+
+class QuizListResponse(QuizResponse):
+  question_count: int
+
+class QuizAnswerCreate(BaseModel):
+  answer_content: str = Field(min_length=1, max_length=120)
+  is_correct: bool
+
+class QuizQuestionCreate(BaseModel):
+  question_content: str = Field(min_length=3, max_length=100)
+  answers: list[QuizAnswerCreate] = Field(min_length=4, max_length=4)
+
+  @model_validator(mode="after")
+  def validate_correct_answer(self):
+    if sum(answer.is_correct for answer in self.answers) != 1:
+      raise ValueError("Each question must have exactly one correct answer.")
+    return self
+
+class QuizCreate(QuizBase):
+  questions: list[QuizQuestionCreate] = Field(min_length=1)
 
 class QuestionBase(BaseModel):
   question_number : int
@@ -87,6 +106,7 @@ class QuizPlayResponse(BaseModel):
   id: int
   quiz_name: str
   description: str | None
+  time_limit_seconds: int | None
   questions: list[QuizPlayQuestionResponse]
 
 class QuizAttemptResponse(BaseModel):
@@ -109,8 +129,15 @@ class QuizAttemptCreate(BaseModel):
 
 class QuizAnswerSubmission(BaseModel):
   question_id: int = Field(gt=0)
-  answer_id: int = Field(gt=0)
+  answer_id: int | None = Field(default=None, gt=0)
   attempt_token: str = Field(min_length=32, max_length=128)
+  timed_out: bool = False
+
+  @model_validator(mode="after")
+  def validate_answer_or_timeout(self):
+    if self.answer_id is None and not self.timed_out:
+      raise ValueError("An answer is required unless the question timed out.")
+    return self
 
 class ResultResponse(BaseModel):
   model_config = ConfigDict(from_attributes=True)

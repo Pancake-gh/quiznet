@@ -2,18 +2,52 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getQuizzes } from "../lib/local-data";
+import { apiRequest, importLegacyQuizzes } from "../lib/api";
 
 export default function Home() {
   const [quizzes, setQuizzes] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [migrationWarning, setMigrationWarning] = useState("");
 
   useEffect(() => {
-    try {
-      setQuizzes(getQuizzes());
-    } catch (requestError) {
-      setError(requestError.message);
+    let active = true;
+    async function loadQuizzes() {
+      try {
+        let databaseQuizzes = await apiRequest("/quiz");
+        if (!active) {
+          return;
+        }
+        setQuizzes(databaseQuizzes);
+        try {
+          if (await importLegacyQuizzes()) {
+            databaseQuizzes = await apiRequest("/quiz");
+            if (active) {
+              setQuizzes(databaseQuizzes);
+            }
+          }
+        } catch (migrationError) {
+          if (active) {
+            setMigrationWarning(
+              `Nie udało się przenieść niektórych quizów z tej przeglądarki. ${migrationError.message}`,
+            );
+          }
+        }
+      } catch (requestError) {
+        if (active) {
+          setError(requestError.message);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
     }
+
+    loadQuizzes();
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
@@ -52,10 +86,18 @@ export default function Home() {
             <h2 className="text-xl font-bold">Dostępne quizy</h2>
             {error && (
               <p className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">
-                Nie udało się odczytać quizów. {error}
+                Nie udało się pobrać quizów z serwera. {error}
               </p>
             )}
-            {!error && quizzes.length === 0 && (
+            {migrationWarning && (
+              <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900" role="alert">
+                {migrationWarning}
+              </p>
+            )}
+            {loading && (
+              <p className="mt-4 text-sm text-stone-600">Ładowanie quizów…</p>
+            )}
+            {!loading && !error && quizzes.length === 0 && (
               <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-stone-600">
                 <p>Nie ma jeszcze quizów. Stwórz pierwszy!</p>
                 <Link className="mt-3 inline-block font-semibold text-green-800 underline" href="/create">
@@ -71,13 +113,18 @@ export default function Home() {
                     key={quiz.id}
                   >
                     <span className="text-xs font-semibold uppercase tracking-wide text-green-700">
-                      {quiz.questions.length}{" "}
-                      {quiz.questions.length === 1 ? "pytanie" : "pytań"}
+                      {quiz.question_count}{" "}
+                      {quiz.question_count === 1 ? "pytanie" : "pytań"}
                     </span>
-                    <h3 className="mt-3 text-lg font-bold">{quiz.title}</h3>
+                    <h3 className="mt-3 text-lg font-bold">{quiz.quiz_name}</h3>
                     <p className="mt-2 flex-1 text-sm leading-6 text-stone-600">
                       {quiz.description || "Sprawdź swoją wiedzę w tym quizie."}
                     </p>
+                    {quiz.time_limit_seconds && (
+                      <p className="mt-2 text-sm text-stone-500">
+                        {quiz.time_limit_seconds} s na pytanie
+                      </p>
+                    )}
                     <Link
                       className="mt-5 rounded-xl bg-green-700 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-green-800"
                       href={`/play/${quiz.id}`}

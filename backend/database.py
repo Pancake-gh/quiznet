@@ -41,6 +41,8 @@ def migrate_legacy_database(target_engine=engine):
             )
         if "description" not in columns_by_table["quizzes"]:
             cursor.execute("ALTER TABLE quizzes ADD COLUMN description VARCHAR(500)")
+        if "time_limit_seconds" not in columns_by_table["quizzes"]:
+            cursor.execute("ALTER TABLE quizzes ADD COLUMN time_limit_seconds INTEGER")
         if "player_name" not in columns_by_table["quiz_attempts"]:
             cursor.execute(
                 "ALTER TABLE quiz_attempts ADD COLUMN player_name VARCHAR(30) NOT NULL DEFAULT ''"
@@ -49,6 +51,8 @@ def migrate_legacy_database(target_engine=engine):
             cursor.execute(
                 "ALTER TABLE quiz_attempts ADD COLUMN attempt_token_hash VARCHAR(64) NOT NULL DEFAULT ''"
             )
+        if "question_started_at" not in columns_by_table["quiz_attempts"]:
+            cursor.execute("ALTER TABLE quiz_attempts ADD COLUMN question_started_at DATETIME")
         if "player_name" not in columns_by_table["results"]:
             cursor.execute(
                 "ALTER TABLE results ADD COLUMN player_name VARCHAR(30) NOT NULL DEFAULT ''"
@@ -58,6 +62,10 @@ def migrate_legacy_database(target_engine=engine):
             "UPDATE quiz_attempts SET player_name = "
             "(SELECT username FROM users WHERE users.id = quiz_attempts.user_id) "
             "WHERE player_name = '' AND user_id IS NOT NULL"
+        )
+        cursor.execute(
+            "UPDATE quiz_attempts SET question_started_at = started_at "
+            "WHERE question_started_at IS NULL"
         )
         cursor.execute(
             "UPDATE results SET player_name = "
@@ -71,13 +79,17 @@ def migrate_legacy_database(target_engine=engine):
                 "CREATE TABLE quiz_attempts ("
                 "id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER, "
                 "player_name VARCHAR(30) NOT NULL, attempt_token_hash VARCHAR(64) NOT NULL, "
-                "quiz_id INTEGER NOT NULL, started_at DATETIME NOT NULL, completed_at DATETIME, "
+                "quiz_id INTEGER NOT NULL, started_at DATETIME NOT NULL, "
+                "question_started_at DATETIME, completed_at DATETIME, "
                 "FOREIGN KEY(user_id) REFERENCES users (id), "
                 "FOREIGN KEY(quiz_id) REFERENCES quizzes (id))"
             )
             cursor.execute(
                 "INSERT INTO quiz_attempts "
-                "SELECT id, user_id, player_name, attempt_token_hash, quiz_id, started_at, completed_at "
+                "(id, user_id, player_name, attempt_token_hash, quiz_id, started_at, "
+                "question_started_at, completed_at) "
+                "SELECT id, user_id, player_name, attempt_token_hash, quiz_id, started_at, "
+                "question_started_at, completed_at "
                 "FROM quiz_attempts_legacy"
             )
             cursor.execute("DROP TABLE quiz_attempts_legacy")
