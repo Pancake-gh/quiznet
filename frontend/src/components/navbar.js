@@ -1,6 +1,24 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import {
+  getSessionUsername,
+  subscribeToSessionChanges,
+} from "../lib/auth-session";
 
 export default function Navbar() {
+  const [username, setUsername] = useState("");
+
+  useEffect(() => {
+    function syncUsername() {
+      setUsername(getSessionUsername() || "");
+    }
+
+    syncUsername();
+    return subscribeToSessionChanges(syncUsername);
+  }, []);
+
   return (
     <header className="border-b border-stone-200 bg-white">
       <nav
@@ -16,12 +34,12 @@ export default function Navbar() {
         </Link>
 
         <div className="flex items-center gap-3 sm:gap-5">
-          <span
-            aria-disabled="true"
-            className="cursor-default rounded-lg px-3 py-2 text-sm font-medium text-stone-400"
+          <Link
+            className="rounded-lg px-3 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-100"
+            href="/results"
           >
             Wyniki
-          </span>
+          </Link>
           <Link
             className="cursor-pointer rounded-lg bg-green-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-green-800 sm:px-4"
             href="/create"
@@ -29,10 +47,11 @@ export default function Navbar() {
             Stwórz quiz
           </Link>
           <Link
+            aria-label={username ? `Konto użytkownika ${username}` : "Konto"}
             className="rounded-lg px-3 py-2 text-sm font-medium text-stone-700 transition hover:bg-stone-100"
             href="/account"
           >
-            Konto
+            {username || "Konto"}
           </Link>
         </div>
       </nav>

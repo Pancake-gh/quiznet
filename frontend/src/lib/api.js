@@ -1,4 +1,5 @@
 import { getQuizzes } from "./local-data";
+import { clearSession, getAccessToken } from "./auth-session";
 
 const API_BASE_PATH = "/api/backend";
 const IMPORTED_QUIZZES_KEY = "quiznet-db-imported-quizzes";
@@ -6,16 +7,30 @@ let legacyImportPromise = null;
 
 export async function apiRequest(path, { body, ...options } = {}) {
   let response;
+  const isFormBody = body instanceof URLSearchParams;
+  const accessToken = getAccessToken();
   try {
     response = await fetch(`${API_BASE_PATH}${path}`, {
       ...options,
       cache: "no-store",
       headers: {
         Accept: "application/json",
-        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(body === undefined
+          ? {}
+          : {
+              "Content-Type": isFormBody
+                ? "application/x-www-form-urlencoded"
+                : "application/json",
+            }),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...options.headers,
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body:
+        body === undefined
+          ? undefined
+          : isFormBody
+            ? body.toString()
+            : JSON.stringify(body),
     });
   } catch (error) {
     if (error instanceof TypeError) {
@@ -26,6 +41,9 @@ export async function apiRequest(path, { body, ...options } = {}) {
 
   const responseBody = response.status === 204 ? null : await response.json();
   if (!response.ok) {
+    if (response.status === 401 && accessToken && !path.startsWith("/auth/")) {
+      clearSession();
+    }
     const detail = responseBody?.detail;
     const message = Array.isArray(detail)
       ? detail.map((item) => item.msg).join(" ")
@@ -37,6 +55,10 @@ export async function apiRequest(path, { body, ...options } = {}) {
 }
 
 async function performLegacyQuizImport() {
+  if (!getAccessToken()) {
+    return false;
+  }
+
   const quizzes = getQuizzes();
   const storedIds = window.localStorage.getItem(IMPORTED_QUIZZES_KEY);
   let importedIds = [];
