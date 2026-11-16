@@ -115,6 +115,7 @@ class QuizAttemptResponse(BaseModel):
   total_questions: int
   player_name: str
   attempt_token: str
+  requires_auth: bool
 
 class QuizAttemptCreate(BaseModel):
   player_name: str = Field(min_length=2, max_length=30)
@@ -157,11 +158,17 @@ class LeaderboardEntryResponse(BaseModel):
   total_questions: int
   completed_at: datetime
 
+class QuizAttemptResultResponse(BaseModel):
+  player_name: str
+  score: int
+  total_questions: int
+  saved: bool
+
 class QuizAnswerProgressResponse(BaseModel):
   answered_questions: int
   total_questions: int
   completed: bool
-  result: ResultResponse | None = None
+  result: QuizAttemptResultResponse | None = None
 
 class Token(BaseModel):
   access_token: str

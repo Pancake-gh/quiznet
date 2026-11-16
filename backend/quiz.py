@@ -7,7 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from auth import get_current_active_user
+from auth import get_current_active_user, get_optional_current_user
 from database import get_db
 from models import Answer, Question, Quiz, QuizAttempt, QuizAttemptAnswer, Result, User
 from schemas import (
@@ -21,9 +21,9 @@ from schemas import (
     QuizPlayAnswerResponse,
     QuizPlayQuestionResponse,
     QuizPlayResponse,
+    QuizAttemptResultResponse,
     QuizResponse,
     QuizUpdate,
-    ResultResponse,
 )
 
 router = APIRouter(prefix="/quiz", tags=["quizzes"])
@@ -33,11 +33,13 @@ router = APIRouter(prefix="/quiz", tags=["quizzes"])
 def create_quiz(
     quiz: QuizCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
     db_quiz = Quiz(
         quiz_name=quiz.quiz_name,
         description=quiz.description,
         time_limit_seconds=quiz.time_limit_seconds,
+        quiz_author=current_user.id,
         quiz_creation_date=datetime.utcnow(),
     )
     try:
@@ -210,6 +212,7 @@ def start_quiz_attempt(
     quiz_id: int,
     attempt_data: QuizAttemptCreate,
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
     if quiz is None:
@@ -248,8 +251,8 @@ def start_quiz_attempt(
     attempt_token = secrets.token_urlsafe(32)
     attempt_started_at = datetime.utcnow()
     attempt = QuizAttempt(
-        user_id=None,
-        player_name=attempt_data.player_name,
+        user_id=current_user.id if current_user else None,
+        player_name=current_user.username if current_user else attempt_data.player_name,
         attempt_token_hash=hashlib.sha256(attempt_token.encode()).hexdigest(),
         quiz_id=quiz_id,
         started_at=attempt_started_at,
@@ -264,6 +267,7 @@ def start_quiz_attempt(
         total_questions=total_questions,
         player_name=attempt.player_name,
         attempt_token=attempt_token,
+        requires_auth=current_user is not None,
     )
 
 
@@ -277,6 +281,7 @@ def submit_quiz_answer(
     attempt_id: int,
     submission: QuizAnswerSubmission,
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     attempt = (
         db.query(QuizAttempt)
@@ -288,6 +293,10 @@ def submit_quiz_answer(
     )
     submitted_token_hash = hashlib.sha256(submission.attempt_token.encode()).hexdigest()
     if attempt is None or not hmac.compare_digest(attempt.attempt_token_hash, submitted_token_hash):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz attempt not found")
+    if attempt.user_id is not None and (
+        current_user is None or attempt.user_id != current_user.id
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz attempt not found")
     if attempt.completed_at is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Quiz attempt is already complete")
@@ -404,22 +413,30 @@ def submit_quiz_answer(
             )
             .count()
         )
-        result = Result(
-            user_id=attempt.user_id,
+        completed_at = datetime.utcnow()
+        attempt.completed_at = completed_at
+        is_saved = attempt.user_id is not None
+        if is_saved:
+            db.add(
+                Result(
+                    user_id=attempt.user_id,
+                    player_name=attempt.player_name,
+                    quiz_id=quiz_id,
+                    score=score,
+                    total_questions=total_questions,
+                    completed_at=completed_at,
+                )
+            )
+        result = QuizAttemptResultResponse(
             player_name=attempt.player_name,
-            quiz_id=quiz_id,
             score=score,
             total_questions=total_questions,
-            completed_at=datetime.utcnow(),
+            saved=is_saved,
         )
-        attempt.completed_at = result.completed_at
-        db.add(result)
     else:
         attempt.question_started_at = current_time
 
     db.commit()
-    if result is not None:
-        db.refresh(result)
     return QuizAnswerProgressResponse(
         answered_questions=answered_questions,
         total_questions=total_questions,
@@ -442,7 +459,7 @@ def get_quiz_leaderboard(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found")
     results = (
         db.query(Result)
-        .filter(Result.quiz_id == quiz_id)
+        .filter(Result.quiz_id == quiz_id, Result.user_id.is_not(None))
         .order_by(Result.score.desc(), Result.completed_at.asc(), Result.id.asc())
         .limit(limit)
         .all()

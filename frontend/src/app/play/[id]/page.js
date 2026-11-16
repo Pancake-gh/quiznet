@@ -4,11 +4,18 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../../lib/api";
+import {
+  getAccessToken,
+  getSessionUsername,
+  subscribeToSessionChanges,
+} from "../../../lib/auth-session";
 
 function PlayQuizContent() {
   const { id } = useParams();
   const [quiz, setQuiz] = useState(null);
   const [playerName, setPlayerName] = useState("");
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [questionIndex, setQuestionIndex] = useState(-1);
   const [selectedAnswer, setSelectedAnswer] = useState("");
   const [timeRemaining, setTimeRemaining] = useState(null);
@@ -22,6 +29,14 @@ function PlayQuizContent() {
 
   useEffect(() => {
     let active = true;
+    function syncSession() {
+      setIsAuthenticated(Boolean(getAccessToken()));
+      setPlayerName(getSessionUsername() || "");
+      setAuthChecked(true);
+    }
+
+    syncSession();
+    const unsubscribe = subscribeToSessionChanges(syncSession);
     apiRequest(`/quiz/${id}/play`)
       .then((savedQuiz) => {
         if (active) {
@@ -36,12 +51,13 @@ function PlayQuizContent() {
 
     return () => {
       active = false;
+      unsubscribe();
     };
   }, [id]);
 
   async function startQuiz(event) {
     event.preventDefault();
-    if (playerName.trim().length < 2) {
+    if (!isAuthenticated && playerName.trim().length < 2) {
       setError("Wpisz nazwę gracza (co najmniej 2 znaki).");
       return;
     }
@@ -156,17 +172,56 @@ function PlayQuizContent() {
             </p>
             <p className="mt-3 text-stone-600">Gracz: {result.player_name}</p>
             <p className="mt-1 text-sm text-stone-500">
-              Zapisano wynik.
+              {result.saved
+                ? "Zapisano wynik w tabeli."
+                : "Rozwiązałeś quiz jako gość. Wynik nie został zapisany."}
+            </p>
+            <div className="mt-7 flex flex-wrap justify-center gap-3">
+              {result.saved ? (
+                <Link
+                  className="inline-flex rounded-xl bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800"
+                  href={`/results#quiz-${quiz.id}`}
+                >
+                  Zobacz tabelę wyników
+                </Link>
+              ) : (
+                <Link
+                  className="inline-flex rounded-xl bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800"
+                  href="/account"
+                >
+                  Zaloguj się na kolejne podejście
+                </Link>
+              )}
+              <Link
+                className="inline-flex rounded-xl border border-stone-300 px-5 py-3 font-semibold text-stone-700 hover:bg-stone-50"
+                href="/"
+              >
+                Wróć do quizów
+              </Link>
+            </div>
+          </div>
+        )}
+        {quiz && !authChecked && !result && (
+          <p className="text-sm text-stone-600" role="status">
+            Sprawdzanie sesji…
+          </p>
+        )}
+        {quiz && authChecked && attempt?.requires_auth && !isAuthenticated && !result && (
+          <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
+            <p className="text-sm font-semibold text-green-700">Quiz</p>
+            <h1 className="mt-2 text-3xl font-bold">{quiz.quiz_name}</h1>
+            <p className="mt-4 leading-6 text-stone-600">
+              Zaloguj się ponownie, aby kontynuować to podejście i zapisać wynik.
             </p>
             <Link
-              className="mt-7 inline-flex rounded-xl bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800"
-              href="/"
+              className="mt-6 inline-flex rounded-xl bg-green-700 px-5 py-3 font-semibold text-white transition hover:bg-green-800"
+              href="/account"
             >
-              Wróć do quizów
+              Zaloguj się lub utwórz konto
             </Link>
           </div>
         )}
-        {quiz && !result && questionIndex < 0 && (
+        {quiz && authChecked && !result && questionIndex < 0 && (
           <form
             className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8"
             onSubmit={startQuiz}
@@ -182,18 +237,24 @@ function PlayQuizContent() {
                 Limit czasu: {quiz.time_limit_seconds} s na każde pytanie
               </p>
             )}
-            <label className="mt-6 block text-sm font-semibold text-stone-700">
-              Nazwa gracza
-              <input
-                autoComplete="nickname"
-                className="mt-2 w-full rounded-xl border border-stone-300 px-4 py-3 font-normal outline-none focus:border-green-600 focus:ring-4 focus:ring-green-100"
-                maxLength={30}
-                minLength={2}
-                onChange={(event) => setPlayerName(event.target.value)}
-                required
-                value={playerName}
-              />
-            </label>
+            {isAuthenticated ? (
+              <p className="mt-6 text-sm text-stone-600">
+                Gracz: <span className="font-semibold text-stone-900">{playerName}</span>
+              </p>
+            ) : (
+              <label className="mt-6 block text-sm font-semibold text-stone-700">
+                Nazwa gracza
+                <input
+                  autoComplete="nickname"
+                  className="mt-2 w-full rounded-xl border border-stone-300 px-4 py-3 font-normal outline-none focus:border-green-600 focus:ring-4 focus:ring-green-100"
+                  maxLength={30}
+                  minLength={2}
+                  onChange={(event) => setPlayerName(event.target.value)}
+                  required
+                  value={playerName}
+                />
+              </label>
+            )}
             <button
               className="mt-6 rounded-xl bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800"
               type="submit"
@@ -213,7 +274,7 @@ function PlayQuizContent() {
             </Link>
           </div>
         )}
-        {question && !result && (
+        {question && (!attempt?.requires_auth || isAuthenticated) && !result && (
           <form
             className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8"
             onSubmit={submitAnswer}

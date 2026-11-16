@@ -1,8 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../lib/api";
+import {
+  getAccessToken,
+  subscribeToSessionChanges,
+} from "../../lib/auth-session";
 
 function createQuestion(id) {
   return {
@@ -22,6 +27,18 @@ export default function CreateQuizPage() {
   const [questions, setQuestions] = useState([createQuestion(1)]);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    function syncAuthentication() {
+      setIsAuthenticated(Boolean(getAccessToken()));
+      setAuthChecked(true);
+    }
+
+    syncAuthentication();
+    return subscribeToSessionChanges(syncAuthentication);
+  }, []);
 
   function updateQuestion(questionId, changes) {
     setQuestions((current) =>
@@ -104,6 +121,44 @@ export default function CreateQuizPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (!authChecked) {
+    return (
+      <main className="min-h-screen bg-stone-50 px-4 py-10 text-stone-600 sm:px-8">
+        <p className="mx-auto max-w-4xl" role="status">
+          Sprawdzanie sesji…
+        </p>
+      </main>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen bg-stone-50 px-4 py-10 text-stone-900 sm:px-8">
+        <section className="mx-auto max-w-lg rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
+          <p className="text-sm font-semibold text-green-700">Panel twórcy</p>
+          <h1 className="mt-2 text-3xl font-bold">Zaloguj się, aby stworzyć quiz</h1>
+          <p className="mt-3 leading-6 text-stone-600">
+            Tworzenie quizów jest dostępne dla zalogowanych użytkowników.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              className="inline-flex rounded-xl bg-green-700 px-5 py-3 font-semibold text-white transition hover:bg-green-800"
+              href="/account"
+            >
+              Zaloguj się lub utwórz konto
+            </Link>
+            <Link
+              className="inline-flex rounded-xl border border-stone-300 px-5 py-3 font-semibold text-stone-700 transition hover:bg-stone-50"
+              href="/"
+            >
+              Wróć do quizów
+            </Link>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   return (

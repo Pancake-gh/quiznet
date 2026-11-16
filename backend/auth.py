@@ -16,6 +16,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 password_hash = PasswordHash.recommended()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/signin")
+optional_oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/auth/signin",
+    auto_error=False,
+)
 
 
 def hash_password(password: str) -> str:
@@ -124,6 +128,31 @@ async def get_current_user(
     user = get_user_by_username(db, username=username)
     if user is None:
         raise credentials_exception
+    return user
+
+
+async def get_optional_current_user(
+    token: Annotated[str | None, Depends(optional_oauth2_scheme)],
+    db: Session = Depends(get_db),
+) -> User | None:
+    if token is None:
+        return None
+
+    username = verify_access_token(token)
+    if username is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = get_user_by_username(db, username=username)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 
