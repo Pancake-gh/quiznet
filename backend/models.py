@@ -18,6 +18,7 @@ class Quiz(Base):
   quiz_name = Column(String(50), nullable=False)
   description = Column(String(500), nullable=True)
   time_limit_seconds = Column(Integer, nullable=True)
+  randomize_questions = Column(Boolean, nullable=False, default=False)
   quiz_author = Column(Integer, ForeignKey('users.id'))
   quiz_creation_date = Column(DateTime)
   user = relationship('User', back_populates='quiz')

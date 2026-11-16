@@ -43,6 +43,10 @@ def migrate_legacy_database(target_engine=engine):
             cursor.execute("ALTER TABLE quizzes ADD COLUMN description VARCHAR(500)")
         if "time_limit_seconds" not in columns_by_table["quizzes"]:
             cursor.execute("ALTER TABLE quizzes ADD COLUMN time_limit_seconds INTEGER")
+        if "randomize_questions" not in columns_by_table["quizzes"]:
+            cursor.execute(
+                "ALTER TABLE quizzes ADD COLUMN randomize_questions BOOLEAN NOT NULL DEFAULT 0"
+            )
         if "player_name" not in columns_by_table["quiz_attempts"]:
             cursor.execute(
                 "ALTER TABLE quiz_attempts ADD COLUMN player_name VARCHAR(30) NOT NULL DEFAULT ''"

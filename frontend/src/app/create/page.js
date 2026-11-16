@@ -24,6 +24,7 @@ export default function CreateQuizPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [timeLimit, setTimeLimit] = useState("");
+  const [randomizeQuestions, setRandomizeQuestions] = useState(false);
   const [questions, setQuestions] = useState([createQuestion(1)]);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -104,6 +105,7 @@ export default function CreateQuizPage() {
           quiz_name: title.trim(),
           description: description.trim() || null,
           time_limit_seconds: timeLimit === "" ? null : Number(timeLimit),
+          randomize_questions: randomizeQuestions,
           questions: questions.map((question) => ({
             question_content: question.text.trim(),
             answers: question.answers.map((answer, answerIndex) => ({
@@ -234,6 +236,24 @@ export default function CreateQuizPage() {
                 />
                 <span className="mt-1 block font-normal text-stone-500">
                   Ten sam limit będzie obowiązywał przy każdym pytaniu.
+                </span>
+              </label>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-stone-200 p-4 text-sm text-stone-700">
+                <input
+                  checked={randomizeQuestions}
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-green-700"
+                  onChange={(event) => setRandomizeQuestions(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <span className="block font-semibold">
+                    Losuj kolejność pytań i odpowiedzi
+                  </span>
+                  <span className="mt-1 block text-stone-500">
+                    Przy każdym uruchomieniu quizu pytania i odpowiedzi będą
+                    wyświetlane w losowej kolejności.
+                  </span>
                 </span>
               </label>
             </div>

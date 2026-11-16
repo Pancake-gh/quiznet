@@ -39,6 +39,7 @@ def create_quiz(
         quiz_name=quiz.quiz_name,
         description=quiz.description,
         time_limit_seconds=quiz.time_limit_seconds,
+        randomize_questions=quiz.randomize_questions,
         quiz_author=current_user.id,
         quiz_creation_date=datetime.utcnow(),
     )
@@ -191,6 +192,7 @@ def get_quiz_for_play(quiz_id: int, db: Session = Depends(get_db)):
         quiz_name=quiz.quiz_name,
         description=quiz.description,
         time_limit_seconds=quiz.time_limit_seconds,
+        randomize_questions=quiz.randomize_questions,
         questions=[
             QuizPlayQuestionResponse(
                 id=question.id,
@@ -307,19 +309,6 @@ def submit_quiz_answer(
         .filter(QuizAttemptAnswer.attempt_id == attempt.id)
         .count()
     )
-    expected_question = (
-        db.query(Question)
-        .filter(Question.question_quiz == quiz_id)
-        .order_by(Question.question_number, Question.id)
-        .offset(answered_questions_before_submission)
-        .first()
-    )
-    if expected_question is None or expected_question.id != submission.question_id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Answer questions in order.",
-        )
-
     question = (
         db.query(Question)
         .filter(
@@ -347,6 +336,20 @@ def submit_quiz_answer(
             status_code=status.HTTP_409_CONFLICT,
             detail="An answer has already been submitted for this question.",
         )
+
+    if not attempt.quiz.randomize_questions:
+        expected_question = (
+            db.query(Question)
+            .filter(Question.question_quiz == quiz_id)
+            .order_by(Question.question_number, Question.id)
+            .offset(answered_questions_before_submission)
+            .first()
+        )
+        if expected_question is None or expected_question.id != submission.question_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Answer questions in order.",
+            )
 
     current_time = datetime.utcnow()
     time_limit_seconds = attempt.quiz.time_limit_seconds

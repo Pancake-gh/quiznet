@@ -16,11 +16,13 @@ class QuizBase(BaseModel):
   quiz_name : str = Field(min_length=3, max_length=50)
   description: str | None = Field(default=None, max_length=500)
   time_limit_seconds: int | None = Field(default=None, ge=1)
+  randomize_questions: bool = False
 
 class QuizUpdate(BaseModel):
   quiz_name : str = Field(min_length=3, max_length=50)
   description: str | None = Field(default=None, max_length=500)
   time_limit_seconds: int | None = Field(default=None, ge=1)
+  randomize_questions: bool = False
 
 class QuizResponse(QuizBase):
   model_config = ConfigDict(from_attributes=True)
@@ -107,6 +109,7 @@ class QuizPlayResponse(BaseModel):
   quiz_name: str
   description: str | None
   time_limit_seconds: int | None
+  randomize_questions: bool
   questions: list[QuizPlayQuestionResponse]
 
 class QuizAttemptResponse(BaseModel):

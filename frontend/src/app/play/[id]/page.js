@@ -10,6 +10,18 @@ import {
   subscribeToSessionChanges,
 } from "../../../lib/auth-session";
 
+function shuffle(items) {
+  const shuffledItems = [...items];
+  for (let index = shuffledItems.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffledItems[index], shuffledItems[swapIndex]] = [
+      shuffledItems[swapIndex],
+      shuffledItems[index],
+    ];
+  }
+  return shuffledItems;
+}
+
 function PlayQuizContent() {
   const { id } = useParams();
   const [quiz, setQuiz] = useState(null);
@@ -66,6 +78,15 @@ function PlayQuizContent() {
         method: "POST",
         body: { player_name: playerName.trim() },
       });
+      if (quiz.randomize_questions) {
+        setQuiz({
+          ...quiz,
+          questions: shuffle(quiz.questions).map((question) => ({
+            ...question,
+            answers: shuffle(question.answers),
+          })),
+        });
+      }
       setAttempt(newAttempt);
       setError("");
       setQuestionIndex(0);
