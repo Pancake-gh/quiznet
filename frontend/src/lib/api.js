@@ -39,7 +39,19 @@ export async function apiRequest(path, { body, ...options } = {}) {
     throw error;
   }
 
-  const responseBody = response.status === 204 ? null : await response.json();
+  const responseText = response.status === 204 ? "" : await response.text();
+  let responseBody = null;
+  let invalidJson = false;
+  if (responseText) {
+    try {
+      responseBody = JSON.parse(responseText);
+    } catch {
+      invalidJson = true;
+    }
+  } else if (response.status !== 204) {
+    invalidJson = true;
+  }
+
   if (!response.ok) {
     if (response.status === 401 && accessToken && !path.startsWith("/auth/")) {
       clearSession();
@@ -48,7 +60,13 @@ export async function apiRequest(path, { body, ...options } = {}) {
     const message = Array.isArray(detail)
       ? detail.map((item) => item.msg).join(" ")
       : detail;
-    throw new Error(message || `Błąd API (${response.status}).`);
+    const invalidBody = invalidJson
+      ? ` ${responseText.slice(0, 200)}`
+      : "";
+    throw new Error(message || `Błąd API (${response.status}).${invalidBody}`);
+  }
+  if (invalidJson) {
+    throw new Error(`Nieprawidłowa odpowiedź API (${response.status}).`);
   }
 
   return responseBody;

@@ -14,12 +14,45 @@ export default function AccountPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [signedInUsername, setSignedInUsername] = useState("");
+  const [myQuizzes, setMyQuizzes] = useState([]);
+  const [quizzesLoading, setQuizzesLoading] = useState(false);
+  const [quizzesError, setQuizzesError] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     setSignedInUsername(getSessionUsername() || "");
   }, []);
+
+  useEffect(() => {
+    if (!signedInUsername) {
+      return undefined;
+    }
+
+    let active = true;
+    setQuizzesLoading(true);
+    setQuizzesError("");
+    apiRequest("/quiz/mine")
+      .then((quizzes) => {
+        if (active) {
+          setMyQuizzes(quizzes);
+        }
+      })
+      .catch((requestError) => {
+        if (active) {
+          setQuizzesError(requestError.message);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setQuizzesLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [signedInUsername]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -65,6 +98,8 @@ export default function AccountPage() {
   function handleSignOut() {
     clearSession();
     setSignedInUsername("");
+    setMyQuizzes([]);
+    setQuizzesError("");
     setUsername("");
     setPassword("");
     setError("");
@@ -72,7 +107,7 @@ export default function AccountPage() {
 
   return (
     <main className="min-h-screen bg-stone-50 px-4 py-10 text-stone-900 sm:px-8">
-      <section className="mx-auto max-w-lg rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
+      <section className="mx-auto max-w-3xl rounded-3xl border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
         <p className="text-sm font-semibold text-green-700">Konto Quiznet</p>
         {signedInUsername ? (
           <>
@@ -80,13 +115,88 @@ export default function AccountPage() {
             <p className="mt-3 leading-6 text-stone-600">
               Jesteś zalogowany. Sesja będzie aktywna w tej karcie przeglądarki.
             </p>
-            <button
-              className="mt-6 cursor-pointer rounded-xl border border-stone-300 px-5 py-3 font-semibold text-stone-700 transition hover:bg-stone-50"
-              onClick={handleSignOut}
-              type="button"
+            <section
+              aria-labelledby="my-quizzes-heading"
+              className="mt-8 border-t border-stone-200 pt-6"
             >
-              Wyloguj się
-            </button>
+              <h2 className="text-xl font-bold" id="my-quizzes-heading">
+                Twoje quizy
+              </h2>
+              {quizzesError && (
+                <p className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">
+                  Nie udało się pobrać Twoich quizów. {quizzesError}
+                </p>
+              )}
+              {quizzesLoading && (
+                <p className="mt-4 text-sm text-stone-600" role="status">
+                  Ładowanie Twoich quizów…
+                </p>
+              )}
+              {!quizzesLoading && !quizzesError && myQuizzes.length === 0 && (
+                <p className="mt-4 text-sm text-stone-600">
+                  Nie masz jeszcze quizów.{" "}
+                  <Link className="font-semibold text-green-800 underline" href="/create">
+                    Utwórz swój pierwszy quiz
+                  </Link>
+                  .
+                </p>
+              )}
+              {myQuizzes.length > 0 && (
+                <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {myQuizzes.map((quiz) => (
+                    <li
+                      className="rounded-2xl border border-stone-200 bg-stone-50 p-4"
+                      key={quiz.id}
+                    >
+                      <h3 className="font-semibold">{quiz.quiz_name}</h3>
+                      <p className="mt-1 text-sm text-stone-600">
+                        {quiz.question_count}{" "}
+                        {quiz.question_count === 1 ? "pytanie" : "pytań"}
+                      </p>
+                      {quiz.report_count > 0 && (
+                        <p className="mt-1 text-sm font-medium text-amber-800">
+                          {quiz.report_count}{" "}
+                          {quiz.report_count === 1
+                            ? "zgłoszenie"
+                            : quiz.report_count < 5
+                              ? "zgłoszenia"
+                              : "zgłoszeń"}
+                        </p>
+                      )}
+                      <div className="mt-3 flex flex-wrap gap-4">
+                        <Link
+                          className="font-semibold text-green-800 underline decoration-green-200 underline-offset-4 hover:text-green-900"
+                          href={`/play/${quiz.id}`}
+                        >
+                          Otwórz quiz
+                        </Link>
+                        <Link
+                          className="font-semibold text-green-800 underline decoration-green-200 underline-offset-4 hover:text-green-900"
+                          href={`/edit/${quiz.id}`}
+                        >
+                          Edytuj quiz
+                        </Link>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <div className="mt-6 flex flex-wrap items-center gap-4">
+              <button
+                className="cursor-pointer rounded-xl border border-stone-300 px-5 py-3 font-semibold text-stone-700 transition hover:bg-stone-50"
+                onClick={handleSignOut}
+                type="button"
+              >
+                Wyloguj się
+              </button>
+              <Link
+                className="font-semibold text-green-800 underline decoration-green-200 underline-offset-4 hover:text-green-900"
+                href="/"
+              >
+                Wróć do quizów
+              </Link>
+            </div>
           </>
         ) : (
           <>
@@ -189,12 +299,14 @@ export default function AccountPage() {
           </>
         )}
 
-        <Link
-          className="mt-6 inline-flex font-semibold text-green-800 underline decoration-green-200 underline-offset-4 hover:text-green-900"
-          href="/"
-        >
-          Wróć do quizów
-        </Link>
+        {!signedInUsername && (
+          <Link
+            className="mt-6 inline-flex font-semibold text-green-800 underline decoration-green-200 underline-offset-4 hover:text-green-900"
+            href="/"
+          >
+            Wróć do quizów
+          </Link>
+        )}
       </section>
     </main>
   );

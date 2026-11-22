@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_active_user
 from database import get_db
-from models import Question, Quiz, User
+from models import Question, QuestionReport, Quiz, User
 from schemas import QuestionCreate, QuestionResponse, QuestionUpdate
 
 router = APIRouter(prefix="/question", tags=["questions"])
@@ -74,6 +74,11 @@ def delete_question(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Question with ID {question_id} not found.")
     if db_question.quiz is None or current_user.id != db_question.quiz.quiz_author:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete questions in your own quizzes.")
+    if db.query(QuestionReport.id).filter(QuestionReport.question_id == question_id).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Questions with reports cannot be deleted.",
+        )
 
     try:
         db.delete(db_question)

@@ -67,6 +67,40 @@ def migrate_legacy_database(target_engine=engine):
                     "ALTER TABLE quiz_attempt_answers "
                     "ADD COLUMN timed_out BOOLEAN NOT NULL DEFAULT 0"
                 )
+        if "question_reports" in tables:
+            question_report_columns = {
+                row[1]
+                for row in cursor.execute("PRAGMA table_info(question_reports)")
+            }
+            if "quiz_id" not in question_report_columns:
+                cursor.execute(
+                    "ALTER TABLE question_reports "
+                    "ADD COLUMN quiz_id INTEGER NOT NULL DEFAULT 0"
+                )
+            if "question_number" not in question_report_columns:
+                cursor.execute(
+                    "ALTER TABLE question_reports "
+                    "ADD COLUMN question_number INTEGER NOT NULL DEFAULT 0"
+                )
+            if "question_content" not in question_report_columns:
+                cursor.execute(
+                    "ALTER TABLE question_reports "
+                    "ADD COLUMN question_content VARCHAR(100) NOT NULL DEFAULT ''"
+                )
+            if "dismissed_at" not in question_report_columns:
+                cursor.execute(
+                    "ALTER TABLE question_reports ADD COLUMN dismissed_at DATETIME"
+                )
+            cursor.execute(
+                "UPDATE question_reports SET "
+                "quiz_id = COALESCE((SELECT question_quiz FROM questions "
+                "WHERE questions.id = question_reports.question_id), 0), "
+                "question_number = COALESCE((SELECT question_number FROM questions "
+                "WHERE questions.id = question_reports.question_id), 0), "
+                "question_content = COALESCE((SELECT question_content FROM questions "
+                "WHERE questions.id = question_reports.question_id), '') "
+                "WHERE quiz_id = 0 OR question_number = 0 OR question_content = ''"
+            )
         if "player_name" not in columns_by_table["results"]:
             cursor.execute(
                 "ALTER TABLE results ADD COLUMN player_name VARCHAR(30) NOT NULL DEFAULT ''"

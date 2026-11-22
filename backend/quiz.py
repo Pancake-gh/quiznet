@@ -4,15 +4,27 @@ import hmac
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, aliased
 
 from auth import get_current_active_user, get_optional_current_user
 from database import get_db
-from models import Answer, Question, Quiz, QuizAttempt, QuizAttemptAnswer, Result, User
+from models import (
+    Answer,
+    Question,
+    QuestionReport,
+    Quiz,
+    QuizAttempt,
+    QuizAttemptAnswer,
+    Result,
+    User,
+)
 from schemas import (
     QuizCreate,
+    QuizEditResponse,
+    QuizEditUpdate,
     QuizListResponse,
+    MyQuizListResponse,
     QuizAnswerProgressResponse,
     QuizAnswerSubmission,
     QuizAttemptCreate,
@@ -25,6 +37,8 @@ from schemas import (
     QuizQuestionReviewResponse,
     QuizResponse,
     QuizUpdate,
+    QuestionReportCreate,
+    QuestionReportResponse,
 )
 
 router = APIRouter(prefix="/quiz", tags=["quizzes"])
@@ -102,6 +116,176 @@ def update_quiz(
         )
 
 
+@router.get(
+    "/{quiz_id}/edit",
+    response_model=QuizEditResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_quiz_for_editing(
+    quiz_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    db_quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if db_quiz is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found.")
+    if current_user.id != db_quiz.quiz_author:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only edit your own quizzes.")
+
+    questions = (
+        db.query(Question)
+        .filter(Question.question_quiz == quiz_id)
+        .order_by(Question.question_number, Question.id)
+        .all()
+    )
+    return {
+        "id": db_quiz.id,
+        "quiz_name": db_quiz.quiz_name,
+        "description": db_quiz.description,
+        "time_limit_seconds": db_quiz.time_limit_seconds,
+        "randomize_questions": db_quiz.randomize_questions,
+        "questions": [
+            {
+                "id": question.id,
+                "question_number": question.question_number,
+                "question_content": question.question_content,
+                "answers": [
+                    {
+                        "answer_content": answer.answer_content,
+                        "is_correct": answer.is_correct,
+                    }
+                    for answer in sorted(question.answer, key=lambda answer: answer.id)
+                ],
+            }
+            for question in questions
+        ],
+    }
+
+
+@router.put(
+    "/{quiz_id}/edit",
+    response_model=QuizResponse,
+    status_code=status.HTTP_200_OK,
+)
+def edit_quiz(
+    quiz_id: int,
+    quiz_data: QuizEditUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    db_quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if db_quiz is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found.")
+    if current_user.id != db_quiz.quiz_author:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only edit your own quizzes.")
+
+    existing_questions = (
+        db.query(Question)
+        .filter(Question.question_quiz == quiz_id)
+        .order_by(Question.question_number, Question.id)
+        .all()
+    )
+    for question in existing_questions[:len(quiz_data.questions)]:
+        if len(question.answer) != 4:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Questions must have exactly four answers before they can be edited.",
+            )
+
+    removed_questions = existing_questions[len(quiz_data.questions):]
+    removed_question_ids = [question.id for question in removed_questions]
+    if removed_question_ids:
+        has_answered_attempts = (
+            db.query(QuizAttemptAnswer.id)
+            .filter(QuizAttemptAnswer.question_id.in_(removed_question_ids))
+            .first()
+            is not None
+        )
+        if has_answered_attempts:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Questions with submitted answers cannot be removed.",
+            )
+        has_reports = (
+            db.query(QuestionReport.id)
+            .filter(QuestionReport.question_id.in_(removed_question_ids))
+            .first()
+            is not None
+        )
+        if has_reports:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Questions with reports cannot be removed.",
+            )
+
+    if len(existing_questions) != len(quiz_data.questions):
+        has_active_attempts = (
+            db.query(QuizAttempt.id)
+            .filter(
+                QuizAttempt.quiz_id == quiz_id,
+                QuizAttempt.completed_at.is_(None),
+            )
+            .first()
+            is not None
+        )
+        if has_active_attempts:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Questions cannot be added or removed while quiz attempts are in progress.",
+            )
+
+    try:
+        db_quiz.quiz_name = quiz_data.quiz_name
+        db_quiz.description = quiz_data.description
+        db_quiz.time_limit_seconds = quiz_data.time_limit_seconds
+        db_quiz.randomize_questions = quiz_data.randomize_questions
+
+        shared_question_count = min(len(existing_questions), len(quiz_data.questions))
+        for question_number, question_data in enumerate(quiz_data.questions, start=1):
+            if question_number <= shared_question_count:
+                db_question = existing_questions[question_number - 1]
+                db_question.question_number = question_number
+                db_question.question_content = question_data.question_content
+                existing_answers = sorted(db_question.answer, key=lambda answer: answer.id)
+                for answer, answer_data in zip(
+                    existing_answers,
+                    question_data.answers,
+                    strict=True,
+                ):
+                    answer.answer_content = answer_data.answer_content
+                    answer.is_correct = answer_data.is_correct
+                continue
+
+            db_question = Question(
+                question_number=question_number,
+                question_content=question_data.question_content,
+                question_quiz=db_quiz.id,
+            )
+            db.add(db_question)
+            db.flush()
+            db.add_all(
+                Answer(
+                    answer_content=answer_data.answer_content,
+                    is_correct=answer_data.is_correct,
+                    answer_question=db_question.id,
+                )
+                for answer_data in question_data.answers
+            )
+
+        for question in removed_questions:
+            db.delete(question)
+
+        db.commit()
+        db.refresh(db_quiz)
+        return db_quiz
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not save quiz changes.",
+        )
+
+
 @router.delete("/{quiz_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_quiz(
     quiz_id: int,
@@ -115,6 +299,9 @@ def delete_quiz(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own quizzes.")
 
     try:
+        db.query(QuestionReport).filter(QuestionReport.quiz_id == quiz_id).delete(
+            synchronize_session=False
+        )
         db.delete(db_quiz)
         db.commit()
         return
@@ -146,6 +333,48 @@ def get_all_quizzes(db: Session = Depends(get_db)):
             "question_count": question_count,
         }
         for quiz, question_count in rows
+    ]
+
+
+@router.get("/mine", response_model=list[MyQuizListResponse], status_code=status.HTTP_200_OK)
+def get_my_quizzes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    report_count = (
+        db.query(func.count(QuestionReport.id))
+        .filter(
+            QuestionReport.quiz_id == Quiz.id,
+            QuestionReport.dismissed_at.is_(None),
+        )
+        .correlate(Quiz)
+        .scalar_subquery()
+    )
+    rows = (
+        db.query(
+            Quiz,
+            func.count(Question.id).label("question_count"),
+            report_count.label("report_count"),
+        )
+        .outerjoin(Question, Question.question_quiz == Quiz.id)
+        .filter(Quiz.quiz_author == current_user.id)
+        .group_by(Quiz.id)
+        .order_by(Quiz.quiz_creation_date.desc(), Quiz.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": quiz.id,
+            "quiz_name": quiz.quiz_name,
+            "description": quiz.description,
+            "time_limit_seconds": quiz.time_limit_seconds,
+            "randomize_questions": quiz.randomize_questions,
+            "quiz_creation_date": quiz.quiz_creation_date,
+            "quiz_author": quiz.quiz_author,
+            "question_count": question_count,
+            "report_count": report_count,
+        }
+        for quiz, question_count, report_count in rows
     ]
 
 
@@ -342,7 +571,7 @@ def submit_quiz_answer(
         expected_question = (
             db.query(Question)
             .filter(Question.question_quiz == quiz_id)
-            .order_by(QuizAttemptAnswer.id)
+            .order_by(Question.question_number, Question.id)
             .offset(answered_questions_before_submission)
             .first()
         )
@@ -459,6 +688,7 @@ def submit_quiz_answer(
             saved=is_saved,
             question_reviews=[
                 QuizQuestionReviewResponse(
+                    question_id=question.id,
                     question_number=question_number,
                     question_content=question.question_content,
                     selected_answer=(
@@ -510,3 +740,161 @@ def get_quiz_leaderboard(
         .all()
     )
     return results
+
+
+@router.post(
+    "/{quiz_id}/reports",
+    response_model=QuestionReportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_question_report(
+    quiz_id: int,
+    report_data: QuestionReportCreate,
+    db: Session = Depends(get_db),
+):
+    question = (
+        db.query(Question)
+        .filter(
+            Question.id == report_data.question_id,
+            Question.question_quiz == quiz_id,
+        )
+        .first()
+    )
+    if question is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found.")
+
+    submitted_token_hash = hashlib.sha256(report_data.attempt_token.encode()).hexdigest()
+    attempt = (
+        db.query(QuizAttempt)
+        .join(QuizAttemptAnswer, QuizAttemptAnswer.attempt_id == QuizAttempt.id)
+        .filter(
+            QuizAttempt.quiz_id == quiz_id,
+            QuizAttempt.id == report_data.attempt_id,
+            QuizAttemptAnswer.question_id == question.id,
+        )
+        .first()
+    )
+    if attempt is None or not hmac.compare_digest(attempt.attempt_token_hash, submitted_token_hash):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz attempt not found.")
+    if attempt.completed_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You can report questions after completing the quiz.",
+        )
+
+    existing_report = (
+        db.query(QuestionReport)
+        .filter(
+            QuestionReport.attempt_id == attempt.id,
+            QuestionReport.question_id == question.id,
+        )
+        .first()
+    )
+    if existing_report is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You have already reported this question for this attempt.",
+        )
+
+    report = QuestionReport(
+        quiz_id=quiz_id,
+        attempt_id=attempt.id,
+        question_id=question.id,
+        question_number=question.question_number,
+        question_content=question.question_content,
+        details=report_data.details,
+        created_at=datetime.utcnow(),
+    )
+    db.add(report)
+    try:
+        db.commit()
+        db.refresh(report)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You have already reported this question for this attempt.",
+        )
+
+    return {
+        "id": report.id,
+        "question_id": question.id,
+        "question_number": report.question_number,
+        "question_content": report.question_content,
+        "reporter_name": attempt.player_name,
+        "details": report.details,
+        "created_at": report.created_at,
+    }
+
+
+@router.get(
+    "/{quiz_id}/reports",
+    response_model=list[QuestionReportResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_quiz_question_reports(
+    quiz_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if quiz is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found.")
+    if current_user.id != quiz.quiz_author:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view reports for your own quizzes.")
+
+    rows = (
+        db.query(QuestionReport, Question, QuizAttempt)
+        .join(Question, Question.id == QuestionReport.question_id)
+        .join(QuizAttempt, QuizAttempt.id == QuestionReport.attempt_id)
+        .filter(
+            QuestionReport.quiz_id == quiz_id,
+            QuestionReport.dismissed_at.is_(None),
+        )
+        .order_by(QuestionReport.created_at.desc(), QuestionReport.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": report.id,
+            "question_id": question.id,
+            "question_number": report.question_number,
+            "question_content": report.question_content,
+            "reporter_name": attempt.player_name,
+            "details": report.details,
+            "created_at": report.created_at,
+        }
+        for report, question, attempt in rows
+    ]
+
+
+@router.patch(
+    "/{quiz_id}/reports/{report_id}/dismiss",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def dismiss_question_report(
+    quiz_id: int,
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+    if quiz is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quiz not found.")
+    if current_user.id != quiz.quiz_author:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only dismiss reports for your own quizzes.")
+
+    report = (
+        db.query(QuestionReport)
+        .filter(
+            QuestionReport.id == report_id,
+            QuestionReport.quiz_id == quiz_id,
+        )
+        .first()
+    )
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found.")
+
+    if report.dismissed_at is None:
+        report.dismissed_at = datetime.utcnow()
+        db.commit()

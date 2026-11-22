@@ -36,6 +36,11 @@ function PlayQuizContent() {
   const [result, setResult] = useState(null);
   const [attempt, setAttempt] = useState(null);
   const [error, setError] = useState("");
+  const [reportingQuestionId, setReportingQuestionId] = useState(null);
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportError, setReportError] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportedQuestionIds, setReportedQuestionIds] = useState([]);
   const submissionInProgress = useRef(false);
   const submitAnswerRef = useRef(null);
 
@@ -169,6 +174,36 @@ function PlayQuizContent() {
     void submitSelectedAnswer(questionTimeRemaining === 0);
   }
 
+  async function submitQuestionReport(event, review) {
+    event.preventDefault();
+    const details = reportDetails.trim();
+    if (details.length < 5) {
+      setReportError("Opisz problem (co najmniej 5 znaków).");
+      return;
+    }
+
+    setReportSubmitting(true);
+    setReportError("");
+    try {
+      await apiRequest(`/quiz/${id}/reports`, {
+        method: "POST",
+        body: {
+          question_id: review.question_id,
+          attempt_id: attempt.id,
+          attempt_token: attempt.attempt_token,
+          details,
+        },
+      });
+      setReportedQuestionIds((current) => [...current, review.question_id]);
+      setReportingQuestionId(null);
+      setReportDetails("");
+    } catch (requestError) {
+      setReportError(requestError.message);
+    } finally {
+      setReportSubmitting(false);
+    }
+  }
+
   const questionTimeRemaining =
     timerQuestionIndex === questionIndex ? timeRemaining : null;
   const timerIsStarting =
@@ -204,14 +239,58 @@ function PlayQuizContent() {
               <ol className="mt-4 space-y-4">
                 {result.question_reviews.map((review) => (
                   <li
-                    className={`rounded-2xl border p-4 ${
+                    className={`relative rounded-2xl border p-4 ${
                       review.is_correct
                         ? "border-green-200 bg-green-50"
                         : "border-red-200 bg-red-50"
                     }`}
                     key={review.question_number}
                   >
-                    <p className="font-semibold text-stone-900">
+                    {reportedQuestionIds.includes(review.question_id) ? (
+                      <span
+                        aria-label="Zgłoszenie wysłane"
+                        className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center text-green-700"
+                        role="status"
+                        title="Zgłoszenie wysłane"
+                      >
+                        <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
+                          <path
+                            d="M5 21V5m0 0h13l-2 4 2 4H5"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                          />
+                        </svg>
+                      </span>
+                    ) : (
+                      <button
+                        aria-expanded={reportingQuestionId === review.question_id}
+                        aria-label="Zgłoś pytanie autorowi"
+                        className="absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-lg text-stone-500 transition hover:bg-white hover:text-red-700 focus:outline-none focus:ring-4 focus:ring-green-200 disabled:cursor-wait disabled:opacity-60"
+                        disabled={reportSubmitting}
+                        onClick={() => {
+                          setReportingQuestionId((current) =>
+                            current === review.question_id ? null : review.question_id,
+                          );
+                          setReportDetails("");
+                          setReportError("");
+                        }}
+                        title="Zgłoś pytanie autorowi"
+                        type="button"
+                      >
+                        <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
+                          <path
+                            d="M5 21V5m0 0h13l-2 4 2 4H5"
+                            stroke="currentColor"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                    <p className="pr-10 font-semibold text-stone-900">
                       {review.question_number}. {review.question_content}
                     </p>
                     <p className={`mt-2 text-sm font-semibold ${
@@ -229,6 +308,52 @@ function PlayQuizContent() {
                       <p className="mt-1 text-sm text-stone-700">
                         Poprawna odpowiedź: {review.correct_answer}
                       </p>
+                    )}
+                    {reportingQuestionId === review.question_id &&
+                      !reportedQuestionIds.includes(review.question_id) && (
+                      <form
+                        className="mt-4"
+                        onSubmit={(event) => submitQuestionReport(event, review)}
+                      >
+                        <label className="block text-sm font-medium text-stone-700">
+                          Co należy poprawić?
+                          <textarea
+                            autoFocus
+                            className="mt-2 min-h-24 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 outline-none transition focus:border-green-600 focus:ring-4 focus:ring-green-100"
+                            maxLength={1000}
+                            minLength={5}
+                            onChange={(event) => setReportDetails(event.target.value)}
+                            placeholder="Opisz błąd w odpowiedzi lub literówkę."
+                            required
+                            value={reportDetails}
+                          />
+                        </label>
+                        {reportError && (
+                          <p className="mt-2 text-sm text-red-700" role="alert">
+                            Nie udało się wysłać zgłoszenia. {reportError}
+                          </p>
+                        )}
+                        <div className="mt-3 flex flex-wrap gap-3">
+                          <button
+                            className="rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:cursor-wait disabled:opacity-60"
+                            disabled={reportSubmitting}
+                            type="submit"
+                          >
+                            {reportSubmitting ? "Wysyłanie…" : "Wyślij zgłoszenie"}
+                          </button>
+                          <button
+                            className="rounded-lg border border-stone-300 px-4 py-2 text-sm font-semibold text-stone-700 hover:bg-white"
+                            disabled={reportSubmitting}
+                            onClick={() => {
+                              setReportingQuestionId(null);
+                              setReportError("");
+                            }}
+                            type="button"
+                          >
+                            Anuluj
+                          </button>
+                        </div>
+                      </form>
                     )}
                   </li>
                 ))}

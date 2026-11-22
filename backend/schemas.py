@@ -24,6 +24,20 @@ class QuizUpdate(BaseModel):
   time_limit_seconds: int | None = Field(default=None, ge=1)
   randomize_questions: bool = False
 
+class QuizEditAnswerResponse(BaseModel):
+  answer_content: str
+  is_correct: bool
+
+class QuizEditQuestionResponse(BaseModel):
+  id: int
+  question_number: int
+  question_content: str
+  answers: list[QuizEditAnswerResponse]
+
+class QuizEditResponse(QuizBase):
+  id: int
+  questions: list[QuizEditQuestionResponse]
+
 class QuizResponse(QuizBase):
   model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +47,9 @@ class QuizResponse(QuizBase):
 
 class QuizListResponse(QuizResponse):
   question_count: int
+
+class MyQuizListResponse(QuizListResponse):
+  report_count: int
 
 class QuizAnswerCreate(BaseModel):
   answer_content: str = Field(min_length=1, max_length=120)
@@ -49,6 +66,9 @@ class QuizQuestionCreate(BaseModel):
     return self
 
 class QuizCreate(QuizBase):
+  questions: list[QuizQuestionCreate] = Field(min_length=1)
+
+class QuizEditUpdate(QuizUpdate):
   questions: list[QuizQuestionCreate] = Field(min_length=1)
 
 class QuestionBase(BaseModel):
@@ -162,12 +182,36 @@ class LeaderboardEntryResponse(BaseModel):
   completed_at: datetime
 
 class QuizQuestionReviewResponse(BaseModel):
+  question_id: int
   question_number: int
   question_content: str
   selected_answer: str | None
   correct_answer: str
   is_correct: bool
   timed_out: bool
+
+class QuestionReportCreate(BaseModel):
+  question_id: int = Field(gt=0)
+  attempt_id: int = Field(gt=0)
+  attempt_token: str = Field(min_length=32, max_length=128)
+  details: str = Field(min_length=5, max_length=1000)
+
+  @field_validator("details")
+  @classmethod
+  def normalize_details(cls, value: str) -> str:
+    value = value.strip()
+    if len(value) < 5:
+      raise ValueError("Report details must contain at least five non-space characters.")
+    return value
+
+class QuestionReportResponse(BaseModel):
+  id: int
+  question_id: int
+  question_number: int
+  question_content: str
+  reporter_name: str
+  details: str
+  created_at: datetime
 
 class QuizAttemptResultResponse(BaseModel):
   player_name: str

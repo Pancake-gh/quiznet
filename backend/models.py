@@ -79,3 +79,16 @@ class QuizAttemptAnswer(Base):
   is_correct = Column(Boolean, nullable=False)
   timed_out = Column(Boolean, nullable=False, default=False)
   attempt = relationship('QuizAttempt', back_populates='answers')
+
+class QuestionReport(Base):
+  __tablename__ = "question_reports"
+  __table_args__ = (UniqueConstraint('attempt_id', 'question_id'),)
+  id = Column(Integer, primary_key=True, index=True)
+  quiz_id = Column(Integer, ForeignKey('quizzes.id'), nullable=False)
+  attempt_id = Column(Integer, ForeignKey('quiz_attempts.id'), nullable=False)
+  question_id = Column(Integer, ForeignKey('questions.id'), nullable=False)
+  question_number = Column(Integer, nullable=False)
+  question_content = Column(String(100), nullable=False)
+  details = Column(String(1000), nullable=False)
+  created_at = Column(DateTime, nullable=False)
+  dismissed_at = Column(DateTime, nullable=True)
