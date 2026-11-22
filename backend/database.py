@@ -57,6 +57,16 @@ def migrate_legacy_database(target_engine=engine):
             )
         if "question_started_at" not in columns_by_table["quiz_attempts"]:
             cursor.execute("ALTER TABLE quiz_attempts ADD COLUMN question_started_at DATETIME")
+        if "quiz_attempt_answers" in tables:
+            attempt_answer_columns = {
+                row[1]
+                for row in cursor.execute("PRAGMA table_info(quiz_attempt_answers)")
+            }
+            if "timed_out" not in attempt_answer_columns:
+                cursor.execute(
+                    "ALTER TABLE quiz_attempt_answers "
+                    "ADD COLUMN timed_out BOOLEAN NOT NULL DEFAULT 0"
+                )
         if "player_name" not in columns_by_table["results"]:
             cursor.execute(
                 "ALTER TABLE results ADD COLUMN player_name VARCHAR(30) NOT NULL DEFAULT ''"

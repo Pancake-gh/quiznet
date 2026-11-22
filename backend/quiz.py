@@ -5,7 +5,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from auth import get_current_active_user, get_optional_current_user
 from database import get_db
@@ -22,6 +22,7 @@ from schemas import (
     QuizPlayQuestionResponse,
     QuizPlayResponse,
     QuizAttemptResultResponse,
+    QuizQuestionReviewResponse,
     QuizResponse,
     QuizUpdate,
 )
@@ -341,7 +342,7 @@ def submit_quiz_answer(
         expected_question = (
             db.query(Question)
             .filter(Question.question_quiz == quiz_id)
-            .order_by(Question.question_number, Question.id)
+            .order_by(QuizAttemptAnswer.id)
             .offset(answered_questions_before_submission)
             .first()
         )
@@ -397,6 +398,7 @@ def submit_quiz_answer(
             question_id=question.id,
             answer_id=answer.id,
             is_correct=is_correct,
+            timed_out=timed_out,
         )
     )
     db.flush()
@@ -415,6 +417,26 @@ def submit_quiz_answer(
                 QuizAttemptAnswer.is_correct.is_(True),
             )
             .count()
+        )
+        correct_answer = aliased(Answer)
+        review_rows = (
+            db.query(Question, QuizAttemptAnswer, Answer, correct_answer)
+            .join(
+                QuizAttemptAnswer,
+                QuizAttemptAnswer.question_id == Question.id,
+            )
+            .join(Answer, Answer.id == QuizAttemptAnswer.answer_id)
+            .join(
+                correct_answer,
+                correct_answer.answer_question == Question.id,
+            )
+            .filter(
+                Question.question_quiz == quiz_id,
+                QuizAttemptAnswer.attempt_id == attempt.id,
+                correct_answer.is_correct.is_(True),
+            )
+            .order_by(QuizAttemptAnswer.id)
+            .all()
         )
         completed_at = datetime.utcnow()
         attempt.completed_at = completed_at
@@ -435,6 +457,26 @@ def submit_quiz_answer(
             score=score,
             total_questions=total_questions,
             saved=is_saved,
+            question_reviews=[
+                QuizQuestionReviewResponse(
+                    question_number=question_number,
+                    question_content=question.question_content,
+                    selected_answer=(
+                        None
+                        if answer_record.timed_out
+                        else selected_answer.answer_content
+                    ),
+                    correct_answer=correct_answer.answer_content,
+                    is_correct=answer_record.is_correct,
+                    timed_out=answer_record.timed_out,
+                )
+                for question_number, (
+                    question,
+                    answer_record,
+                    selected_answer,
+                    correct_answer,
+                ) in enumerate(review_rows, start=1)
+            ],
         )
     else:
         attempt.question_started_at = current_time

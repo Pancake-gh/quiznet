@@ -77,4 +77,5 @@ class QuizAttemptAnswer(Base):
   question_id = Column(Integer, ForeignKey('questions.id'), nullable=False)
   answer_id = Column(Integer, ForeignKey('answers.id'), nullable=False)
   is_correct = Column(Boolean, nullable=False)
+  timed_out = Column(Boolean, nullable=False, default=False)
   attempt = relationship('QuizAttempt', back_populates='answers')

@@ -161,11 +161,20 @@ class LeaderboardEntryResponse(BaseModel):
   total_questions: int
   completed_at: datetime
 
+class QuizQuestionReviewResponse(BaseModel):
+  question_number: int
+  question_content: str
+  selected_answer: str | None
+  correct_answer: str
+  is_correct: bool
+  timed_out: bool
+
 class QuizAttemptResultResponse(BaseModel):
   player_name: str
   score: int
   total_questions: int
   saved: bool
+  question_reviews: list[QuizQuestionReviewResponse]
 
 class QuizAnswerProgressResponse(BaseModel):
   answered_questions: int

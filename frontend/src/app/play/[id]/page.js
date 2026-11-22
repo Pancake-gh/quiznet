@@ -197,6 +197,43 @@ function PlayQuizContent() {
                 ? "Zapisano wynik w tabeli."
                 : "Rozwiązałeś quiz jako gość. Wynik nie został zapisany."}
             </p>
+            <section className="mt-8 text-left" aria-labelledby="review-heading">
+              <h2 className="text-xl font-bold" id="review-heading">
+                Przegląd odpowiedzi
+              </h2>
+              <ol className="mt-4 space-y-4">
+                {result.question_reviews.map((review) => (
+                  <li
+                    className={`rounded-2xl border p-4 ${
+                      review.is_correct
+                        ? "border-green-200 bg-green-50"
+                        : "border-red-200 bg-red-50"
+                    }`}
+                    key={review.question_number}
+                  >
+                    <p className="font-semibold text-stone-900">
+                      {review.question_number}. {review.question_content}
+                    </p>
+                    <p className={`mt-2 text-sm font-semibold ${
+                      review.is_correct ? "text-green-800" : "text-red-800"
+                    }`}>
+                      {review.is_correct ? "Poprawna odpowiedź" : "Niepoprawna odpowiedź"}
+                    </p>
+                    <p className="mt-1 text-sm text-stone-700">
+                      Twoja odpowiedź:{" "}
+                      {review.timed_out
+                        ? "Brak odpowiedzi — upłynął czas."
+                        : review.selected_answer}
+                    </p>
+                    {!review.is_correct && (
+                      <p className="mt-1 text-sm text-stone-700">
+                        Poprawna odpowiedź: {review.correct_answer}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </section>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
               {result.saved ? (
                 <Link
