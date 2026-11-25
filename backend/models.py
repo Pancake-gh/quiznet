@@ -17,6 +17,7 @@ class Quiz(Base):
   id = Column(Integer, primary_key=True, index=True)
   quiz_name = Column(String(50), nullable=False)
   description = Column(String(500), nullable=True)
+  difficulty = Column(String(10), nullable=False, default="medium")
   time_limit_seconds = Column(Integer, nullable=True)
   randomize_questions = Column(Boolean, nullable=False, default=False)
   quiz_author = Column(Integer, ForeignKey('users.id'))

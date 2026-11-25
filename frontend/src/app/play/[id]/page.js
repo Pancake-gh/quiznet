@@ -412,6 +412,13 @@ function PlayQuizContent() {
             <p className="text-sm font-semibold text-green-700">Quiz</p>
             <h1 className="mt-2 text-3xl font-bold">{quiz.quiz_name}</h1>
             {quiz.description && <p className="mt-3 text-stone-600">{quiz.description}</p>}
+            <p className="mt-4 text-sm font-semibold text-green-800">
+              Poziom trudności: {{
+                easy: "Łatwy",
+                medium: "Średni",
+                hard: "Trudny",
+              }[quiz.difficulty] || "Średni"}
+            </p>
             <p className="mt-5 text-sm text-stone-500">
               {quiz.questions.length} {quiz.questions.length === 1 ? "pytanie" : "pytań"}
             </p>

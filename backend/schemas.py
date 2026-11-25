@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 class UserBase(BaseModel):
@@ -15,12 +16,14 @@ class UserResponse(UserBase):
 class QuizBase(BaseModel):
   quiz_name : str = Field(min_length=3, max_length=50)
   description: str | None = Field(default=None, max_length=500)
+  difficulty: Literal["easy", "medium", "hard"] = "medium"
   time_limit_seconds: int | None = Field(default=None, ge=1)
   randomize_questions: bool = False
 
 class QuizUpdate(BaseModel):
   quiz_name : str = Field(min_length=3, max_length=50)
   description: str | None = Field(default=None, max_length=500)
+  difficulty: Literal["easy", "medium", "hard"] = "medium"
   time_limit_seconds: int | None = Field(default=None, ge=1)
   randomize_questions: bool = False
 
@@ -128,6 +131,7 @@ class QuizPlayResponse(BaseModel):
   id: int
   quiz_name: str
   description: str | None
+  difficulty: Literal["easy", "medium", "hard"]
   time_limit_seconds: int | None
   randomize_questions: bool
   questions: list[QuizPlayQuestionResponse]

@@ -35,6 +35,7 @@ export default function QuizEditor({ quizId = null } = {}) {
   const nextQuestionId = useRef(2);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [difficulty, setDifficulty] = useState("medium");
   const [timeLimit, setTimeLimit] = useState("");
   const [randomizeQuestions, setRandomizeQuestions] = useState(false);
   const [questions, setQuestions] = useState([createQuestion(1)]);
@@ -79,6 +80,7 @@ export default function QuizEditor({ quizId = null } = {}) {
         }
         setTitle(savedQuiz.quiz_name);
         setDescription(savedQuiz.description || "");
+        setDifficulty(savedQuiz.difficulty || "medium");
         setTimeLimit(savedQuiz.time_limit_seconds?.toString() || "");
         setRandomizeQuestions(savedQuiz.randomize_questions);
         const loadedQuestions = savedQuiz.questions.map((question) => ({
@@ -242,6 +244,7 @@ export default function QuizEditor({ quizId = null } = {}) {
           body: {
             quiz_name: title.trim(),
             description: description.trim() || null,
+            difficulty,
             time_limit_seconds: timeLimit === "" ? null : Number(timeLimit),
             randomize_questions: randomizeQuestions,
             questions: questions.map((question) => ({
@@ -388,6 +391,19 @@ export default function QuizEditor({ quizId = null } = {}) {
                   rows={3}
                   value={description}
                 />
+              </label>
+
+              <label className="block text-sm font-semibold text-stone-700">
+                Poziom trudności
+                <select
+                  className="mt-2 w-full rounded-xl border border-stone-300 px-4 py-3 font-normal outline-none transition focus:border-green-600 focus:ring-4 focus:ring-green-100"
+                  onChange={(event) => setDifficulty(event.target.value)}
+                  value={difficulty}
+                >
+                  <option value="easy">Łatwy</option>
+                  <option value="medium">Średni</option>
+                  <option value="hard">Trudny</option>
+                </select>
               </label>
 
               <label className="block text-sm font-semibold text-stone-700">

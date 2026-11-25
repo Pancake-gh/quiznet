@@ -53,6 +53,7 @@ def create_quiz(
     db_quiz = Quiz(
         quiz_name=quiz.quiz_name,
         description=quiz.description,
+        difficulty=quiz.difficulty,
         time_limit_seconds=quiz.time_limit_seconds,
         randomize_questions=quiz.randomize_questions,
         quiz_author=current_user.id,
@@ -142,6 +143,7 @@ def get_quiz_for_editing(
         "id": db_quiz.id,
         "quiz_name": db_quiz.quiz_name,
         "description": db_quiz.description,
+        "difficulty": db_quiz.difficulty,
         "time_limit_seconds": db_quiz.time_limit_seconds,
         "randomize_questions": db_quiz.randomize_questions,
         "questions": [
@@ -237,6 +239,7 @@ def edit_quiz(
     try:
         db_quiz.quiz_name = quiz_data.quiz_name
         db_quiz.description = quiz_data.description
+        db_quiz.difficulty = quiz_data.difficulty
         db_quiz.time_limit_seconds = quiz_data.time_limit_seconds
         db_quiz.randomize_questions = quiz_data.randomize_questions
 
@@ -328,6 +331,7 @@ def get_all_quizzes(db: Session = Depends(get_db)):
             "id": quiz.id,
             "quiz_name": quiz.quiz_name,
             "description": quiz.description,
+            "difficulty": quiz.difficulty,
             "quiz_creation_date": quiz.quiz_creation_date,
             "quiz_author": quiz.quiz_author,
             "question_count": question_count,
@@ -367,6 +371,7 @@ def get_my_quizzes(
             "id": quiz.id,
             "quiz_name": quiz.quiz_name,
             "description": quiz.description,
+            "difficulty": quiz.difficulty,
             "time_limit_seconds": quiz.time_limit_seconds,
             "randomize_questions": quiz.randomize_questions,
             "quiz_creation_date": quiz.quiz_creation_date,
@@ -421,6 +426,7 @@ def get_quiz_for_play(quiz_id: int, db: Session = Depends(get_db)):
         id=quiz.id,
         quiz_name=quiz.quiz_name,
         description=quiz.description,
+        difficulty=quiz.difficulty,
         time_limit_seconds=quiz.time_limit_seconds,
         randomize_questions=quiz.randomize_questions,
         questions=[

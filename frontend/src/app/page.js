@@ -9,6 +9,18 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [migrationWarning, setMigrationWarning] = useState("");
+  const [difficultyFilter, setDifficultyFilter] = useState("all");
+
+  const difficultyLabels = {
+    easy: "Łatwy",
+    medium: "Średni",
+    hard: "Trudny",
+  };
+
+  const filteredQuizzes =
+    difficultyFilter === "all"
+      ? quizzes
+      : quizzes.filter((quiz) => quiz.difficulty === difficultyFilter);
 
   useEffect(() => {
     let active = true;
@@ -84,6 +96,27 @@ export default function Home() {
 
           <div className="mt-8">
             <h2 className="text-xl font-bold">Dostępne quizy</h2>
+            <div className="mt-4 flex flex-wrap gap-2" aria-label="Filtruj quizy według trudności">
+              {[
+                ["all", "Wszystkie"],
+                ["easy", "Łatwe"],
+                ["medium", "Średnie"],
+                ["hard", "Trudne"],
+              ].map(([value, label]) => (
+                <button
+                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                    difficultyFilter === value
+                      ? "border-green-700 bg-green-700 text-white"
+                      : "border-stone-300 bg-white text-stone-700 hover:border-green-600"
+                  }`}
+                  key={value}
+                  onClick={() => setDifficultyFilter(value)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             {error && (
               <p className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800" role="alert">
                 Nie udało się pobrać quizów z serwera. {error}
@@ -105,9 +138,14 @@ export default function Home() {
                 </Link>
               </div>
             )}
-            {quizzes.length > 0 && (
+            {!loading && !error && quizzes.length > 0 && filteredQuizzes.length === 0 && (
+              <div className="mt-4 rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-stone-600">
+                <p>Brak quizów o wybranym poziomie trudności.</p>
+              </div>
+            )}
+            {filteredQuizzes.length > 0 && (
               <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {quizzes.map((quiz) => (
+                {filteredQuizzes.map((quiz) => (
                   <article
                     className="flex flex-col rounded-2xl border border-stone-200 bg-white p-5 shadow-sm"
                     key={quiz.id}
@@ -119,6 +157,9 @@ export default function Home() {
                     <h3 className="mt-3 text-lg font-bold">{quiz.quiz_name}</h3>
                     <p className="mt-2 flex-1 text-sm leading-6 text-stone-600">
                       {quiz.description || "Sprawdź swoją wiedzę w tym quizie."}
+                    </p>
+                    <p className="mt-3 text-sm font-semibold text-green-800">
+                      {difficultyLabels[quiz.difficulty] || "Średni"}
                     </p>
                     {quiz.time_limit_seconds && (
                       <p className="mt-2 text-sm text-stone-500">
