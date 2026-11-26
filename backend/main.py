@@ -4,9 +4,8 @@ import answer
 import auth
 import question
 import quiz
-from database import Base, engine, migrate_legacy_database
+from database import Base, engine
 
-migrate_legacy_database(engine)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="QuizNet API")
