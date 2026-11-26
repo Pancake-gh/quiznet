@@ -1,8 +1,9 @@
 /** @type {import('next').NextConfig} */
-const backendApiUrl = "http://localhost:8000";
+const backendApiUrl = process.env.BACKEND_API_URL || "http://localhost:8000";
 
 const nextConfig = {
   /* config options here */
+  output: "standalone",
   cacheComponents: true,
   partialPrefetching: true,
   reactCompiler: true,
