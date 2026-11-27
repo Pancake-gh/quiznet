@@ -278,6 +278,41 @@ def edit_quiz(
         for question in removed_questions:
             db.delete(question)
 
+        completed_attempts = (
+            db.query(QuizAttempt)
+            .filter(
+                QuizAttempt.quiz_id == quiz_id,
+                QuizAttempt.completed_at.is_not(None),
+            )
+            .all()
+        )
+        attempt_scores = {attempt.id: 0 for attempt in completed_attempts}
+        if completed_attempts:
+            completed_attempt_ids = list(attempt_scores)
+            answer_rows = (
+                db.query(QuizAttemptAnswer, Answer.is_correct)
+                .join(Answer, Answer.id == QuizAttemptAnswer.answer_id)
+                .filter(QuizAttemptAnswer.attempt_id.in_(completed_attempt_ids))
+                .all()
+            )
+            for attempt_answer, answer_is_correct in answer_rows:
+                attempt_answer.is_correct = answer_is_correct and not attempt_answer.timed_out
+                if attempt_answer.is_correct:
+                    attempt_scores[attempt_answer.attempt_id] += 1
+
+            attempt_ids_by_result = {
+                (attempt.user_id, attempt.completed_at): attempt.id
+                for attempt in completed_attempts
+                if attempt.user_id is not None
+            }
+            results = db.query(Result).filter(Result.quiz_id == quiz_id).all()
+            for result in results:
+                attempt_id = attempt_ids_by_result.get(
+                    (result.user_id, result.completed_at)
+                )
+                if attempt_id is not None:
+                    result.score = attempt_scores[attempt_id]
+
         db.commit()
         db.refresh(db_quiz)
         return db_quiz
